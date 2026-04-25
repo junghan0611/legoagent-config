@@ -1,0 +1,878 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>legoagent — SPIKE Prime 콘솔</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+  <style>
+    :root {
+      --bg:#0e0e10; --panel:#16161a; --panel2:#1f1f25; --line:#2a2a32;
+      --txt:#eaeaf0; --dim:#8a8a96; --accent:#3aaf3a; --warn:#7a1f1f;
+      --motor:#3a7fff; --sensor:#ff9b3a; --hub:#b86bff;
+      --r:#e25555; --g:#3aaf3a; --b:#3a7fff;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin:0; height:100%; background:var(--bg); color:var(--txt);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+      user-select:none; -webkit-user-select:none; touch-action:manipulation; overscroll-behavior:none;
+    }
+    button, input, select { font-family: inherit; color: inherit; }
+    button { background:var(--panel2); color:var(--txt); border:1px solid var(--line);
+             border-radius:10px; padding:8px 12px; font-size:.95rem; cursor:pointer; }
+    button:active, button.down { background:var(--accent); border-color:var(--accent); }
+    button.danger { background:var(--warn); border-color:var(--warn); }
+    button.ghost { background:transparent; }
+    input[type=number], input[type=text], select {
+      background:var(--panel2); border:1px solid var(--line); border-radius:8px;
+      padding:6px 8px; font-size:.9rem; }
+    input[type=range] { width:100%; }
+    .dim { color:var(--dim); }
+
+    /* layout */
+    header {
+      display:flex; align-items:center; gap:10px;
+      padding:8px 12px; border-bottom:1px solid var(--line); background:var(--panel);
+      position:sticky; top:0; z-index:10;
+    }
+    header .title { font-weight:700; }
+    header .spacer { flex:1; }
+    .pill {
+      display:inline-flex; align-items:center; gap:6px; font-size:.8rem;
+      padding:4px 10px; border-radius:999px; background:var(--panel2); border:1px solid var(--line);
+      color:var(--dim);
+    }
+    .pill .dot { width:8px; height:8px; border-radius:50%; background:#444; }
+    .pill.ok .dot { background:var(--g); } .pill.ok { color:var(--txt); }
+    .pill.bad .dot { background:var(--r); }
+
+    nav.tabs {
+      display:flex; gap:4px; padding:6px 8px; background:var(--panel);
+      border-bottom:1px solid var(--line); overflow-x:auto;
+      position:sticky; top:48px; z-index:9;
+    }
+    nav.tabs button { white-space:nowrap; padding:6px 12px; font-size:.9rem;
+                      background:transparent; border:1px solid transparent; }
+    nav.tabs button.active { background:var(--panel2); border-color:var(--line); }
+
+    main { padding: 10px; padding-bottom: 80px; }
+    .panel { display:none; }
+    .panel.active { display:block; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:14px;
+            padding:12px; margin-bottom:10px; }
+    .card h3 { margin:0 0 10px; font-size:.95rem; display:flex; align-items:center; gap:8px; }
+    .card h3 .tag { font-size:.7rem; padding:2px 8px; border-radius:6px; background:var(--panel2); color:var(--dim); }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+
+    /* drive pad */
+    .pad {
+      display:grid; grid-template-columns:1fr 1fr 1fr; grid-template-rows:1fr 1fr 1fr;
+      gap:10px; height: 60vh; min-height: 320px;
+    }
+    .pad button { font-size:2.4rem; border-radius:16px; }
+    .pad .stp { background:var(--warn); border-color:var(--warn); }
+    .pad .fwd { grid-column:2; grid-row:1; }
+    .pad .lft { grid-column:1; grid-row:2; }
+    .pad .stp { grid-column:2; grid-row:2; }
+    .pad .rgt { grid-column:3; grid-row:2; }
+    .pad .rev { grid-column:2; grid-row:3; }
+
+    /* port card */
+    .port { border-left: 4px solid var(--line); }
+    .port[data-mode=motor] { border-left-color: var(--motor); }
+    .port[data-mode=sensor] { border-left-color: var(--sensor); }
+    .port .label { font-weight:700; font-size:1.1rem; min-width:24px; }
+    .readout { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+               background:var(--panel2); border:1px solid var(--line); border-radius:8px;
+               padding:6px 10px; font-size:.85rem; min-width:120px; }
+
+    /* LED matrix */
+    .matrix { display:grid; grid-template-columns: repeat(5, 44px); gap:6px;
+              justify-content:center; margin: 8px 0; }
+    .matrix .px { aspect-ratio:1; border:1px solid var(--line); border-radius:6px; background:#0a0a0c; }
+    .matrix .px[data-on="100"] { background:#ffaa00; box-shadow: inset 0 0 6px #ffaa00; }
+    .matrix .px[data-on="50"]  { background:#7a5500; }
+    .matrix .px[data-on="25"]  { background:#3a2a00; }
+
+    /* 5x5 icon presets */
+    .icons { display:flex; flex-wrap:wrap; gap:6px; }
+    .icons button { padding:4px 8px; font-size:.8rem; }
+
+    /* IMU / battery readout grid */
+    .stats { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; }
+    .stat { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:10px; }
+    .stat .k { font-size:.7rem; color:var(--dim); }
+    .stat .v { font-family: ui-monospace, monospace; font-size:1.1rem; }
+
+    /* color picker */
+    .swatches { display:flex; flex-wrap:wrap; gap:6px; }
+    .swatch { width:32px; height:32px; border-radius:8px; border:1px solid var(--line); cursor:pointer; }
+
+    /* console */
+    #console {
+      background:#06060a; color:#cfcfd6; border:1px solid var(--line); border-radius:10px;
+      padding:8px; height:240px; overflow:auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.8rem;
+      white-space:pre-wrap; word-break:break-all;
+    }
+    #console .out { color:#9ad79a; }
+    #console .in  { color:#b8c8ff; }
+    #console .err { color:#ff8b8b; }
+    #console .sys { color:#7a7a86; }
+
+    .footer-bar {
+      position:fixed; bottom:0; left:0; right:0; background:var(--panel);
+      border-top:1px solid var(--line); padding:8px 12px; display:flex; gap:8px; align-items:center;
+      z-index: 8;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="title">🧱 legoagent</span>
+  <span id="hubPill" class="pill"><span class="dot"></span><span id="hubMsg">disconnected</span></span>
+  <span class="spacer"></span>
+  <button id="btnConnect">connect</button>
+  <button id="btnDisconnect" class="ghost">disconnect</button>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="active" data-tab="drive">🚗 Drive</button>
+  <button data-tab="wheels">🔧 Wheels</button>
+  <button data-tab="ports">⚙️ Ports</button>
+  <button data-tab="display">🟧 Display</button>
+  <button data-tab="sound">🔊 Sound</button>
+  <button data-tab="light">🎨 Light</button>
+  <button data-tab="imu">🧭 IMU</button>
+  <button data-tab="hub">🔋 Hub</button>
+  <button data-tab="console">📜 Console</button>
+</nav>
+
+<main>
+
+<!-- ============ DRIVE ============ -->
+<section class="panel active" id="panel-drive">
+  <div class="card">
+    <h3>RC 조종 <span class="tag">drv</span></h3>
+    <div class="pad">
+      <button class="fwd" data-hold="drv fwd">▲</button>
+      <button class="lft" data-hold="drv lft">◀</button>
+      <button class="stp" data-cmd="drv stp">■</button>
+      <button class="rgt" data-hold="drv rgt">▶</button>
+      <button class="rev" data-hold="drv rev">▼</button>
+    </div>
+    <p class="dim" style="margin:8px 4px 0;font-size:.8rem">
+      누르고 있는 동안 진행 · 떼면 정지 · 백그라운드 가면 정지
+    </p>
+  </div>
+</section>
+
+<!-- ============ WHEEL CALIBRATION WIZARD ============ -->
+<section class="panel" id="panel-wheels">
+  <div class="card">
+    <h3>🔧 바퀴 캘리브레이션 마법사</h3>
+    <p class="dim" style="margin:0 0 8px;font-size:.85rem">
+      포트마다 모터를 짧게 한 번 돌려서 어떤 바퀴인지 / 방향이 맞는지 알아낸다.
+      차체를 들거나 받쳐놓고(바닥과 안 닿게) 시작하면 안전.
+    </p>
+    <div class="row">
+      <label class="dim">테스트 속도 <input type="number" id="calSpeed" value="300" min="50" max="1000" style="width:80px"> deg/s</label>
+      <label class="dim">시간 <input type="number" id="calDur" value="800" min="200" max="3000" style="width:80px"> ms</label>
+      <button id="calReset" class="ghost">처음부터</button>
+    </div>
+  </div>
+
+  <div class="card" id="calStepCard">
+    <h3>단계 <span id="calStepNum">1</span> / 4 — 포트 <span id="calPort" style="color:var(--motor)">A</span> 테스트</h3>
+    <p class="dim" style="margin:0 0 10px;font-size:.85rem">
+      차체 어디 바퀴가 도는지 / 어느 방향으로 도는지 본다.
+    </p>
+    <div class="row" style="margin-bottom:10px">
+      <button id="calNudge" style="font-size:1.1rem;padding:12px 20px">▶ 한 번 돌리기</button>
+      <span class="dim" style="font-size:.8rem">(+ 방향, 그 다음 자동 정지)</span>
+    </div>
+
+    <div class="grid2" style="gap:10px">
+      <div>
+        <div class="dim" style="font-size:.8rem;margin-bottom:4px">어떤 바퀴?</div>
+        <select id="calWheel" style="width:100%">
+          <option value="">— 선택 —</option>
+          <option value="FL">전면 좌측 (Front-Left)</option>
+          <option value="FR">전면 우측 (Front-Right)</option>
+          <option value="RL">후면 좌측 (Rear-Left)</option>
+          <option value="RR">후면 우측 (Rear-Right)</option>
+          <option value="none">모터 아님 / 다른 용도</option>
+        </select>
+      </div>
+      <div>
+        <div class="dim" style="font-size:.8rem;margin-bottom:4px">차 진행 방향 기준</div>
+        <select id="calDir" style="width:100%">
+          <option value="">— 선택 —</option>
+          <option value="forward">정방향 (앞으로 굴러감)</option>
+          <option value="reverse">역방향 (뒤로 굴러감)</option>
+          <option value="na">해당 없음</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:14px;justify-content:flex-end">
+      <button id="calBack" class="ghost">◀ 이전</button>
+      <button id="calNext">다음 ▶</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>결과 매핑</h3>
+    <div id="calResult" style="font-family:ui-monospace,monospace;font-size:.85rem">
+      <div class="dim">— 아직 비어있음 —</div>
+    </div>
+  </div>
+
+  <div class="card" id="calCodeCard" style="display:none">
+    <h3>🐍 main.py 에 박을 코드</h3>
+    <pre id="calCode" style="background:#06060a;color:#cfcfd6;border:1px solid var(--line);
+         border-radius:10px;padding:10px;overflow:auto;font-size:.8rem;white-space:pre"></pre>
+    <div class="row">
+      <button id="calCopy">copy</button>
+      <span class="dim" id="calCopied" style="font-size:.8rem"></span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PORTS A-F ============ -->
+<section class="panel" id="panel-ports">
+  <div class="card">
+    <h3>포트 A–F <span class="tag">mot / sensor</span></h3>
+    <p class="dim" style="margin:0 0 10px;font-size:.8rem">
+      각 포트마다 모터로 쓸지 센서로 쓸지 선택. 센서는 자동 감지(connect 후).
+    </p>
+  </div>
+
+  <!-- 6 port cards generated -->
+  <div id="portList"></div>
+</section>
+
+<!-- ============ DISPLAY (5x5 LED) ============ -->
+<section class="panel" id="panel-display">
+  <div class="card">
+    <h3>5×5 디스플레이 <span class="tag">dsp</span></h3>
+    <div class="row" style="justify-content:space-between">
+      <span class="dim" style="font-size:.8rem">픽셀 클릭: 0 → 25 → 50 → 100% 순환</span>
+      <div class="row">
+        <button id="dspClear" class="ghost">clear</button>
+        <button id="dspSend">send</button>
+      </div>
+    </div>
+    <div class="matrix" id="matrix"></div>
+  </div>
+
+  <div class="card">
+    <h3>아이콘 프리셋</h3>
+    <div class="icons" id="iconList"></div>
+  </div>
+
+  <div class="card">
+    <h3>텍스트 스크롤</h3>
+    <div class="row">
+      <input id="dspText" type="text" placeholder="hello" style="flex:1">
+      <button id="dspTextSend">scroll</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SOUND ============ -->
+<section class="panel" id="panel-sound">
+  <div class="card">
+    <h3>비프 <span class="tag">snd beep</span></h3>
+    <div class="row">
+      <label class="dim">freq <input type="number" id="beepFreq" value="440" min="50" max="20000" style="width:90px"> Hz</label>
+      <label class="dim">길이 <input type="number" id="beepMs" value="200" min="10" max="5000" style="width:90px"> ms</label>
+      <button id="beepSend">▶ 재생</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>음계 <span class="tag">snd note</span></h3>
+    <div class="row" id="noteRow"></div>
+    <p class="dim" style="margin-top:6px;font-size:.8rem">기본 200ms · 길이는 위 값 사용</p>
+  </div>
+</section>
+
+<!-- ============ LIGHT ============ -->
+<section class="panel" id="panel-light">
+  <div class="card">
+    <h3>허브 라이트 <span class="tag">lit r g b</span></h3>
+    <div class="row">
+      <label>R <input type="range" id="r" min="0" max="255" value="0"></label>
+      <span class="readout" id="rv">0</span>
+    </div>
+    <div class="row">
+      <label>G <input type="range" id="g" min="0" max="255" value="0"></label>
+      <span class="readout" id="gv">0</span>
+    </div>
+    <div class="row">
+      <label>B <input type="range" id="b" min="0" max="255" value="0"></label>
+      <span class="readout" id="bv">0</span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div id="preview" style="width:80px;height:32px;border-radius:8px;border:1px solid var(--line);background:#000"></div>
+      <button id="litSend">apply</button>
+      <button id="litOff" class="ghost">off</button>
+    </div>
+    <h3 style="margin-top:14px">프리셋</h3>
+    <div class="swatches" id="litSwatches"></div>
+  </div>
+</section>
+
+<!-- ============ IMU ============ -->
+<section class="panel" id="panel-imu">
+  <div class="card">
+    <h3>IMU 텔레메트리 <span class="tag">imu</span></h3>
+    <div class="stats">
+      <div class="stat"><div class="k">pitch</div><div class="v" id="imuPitch">—</div></div>
+      <div class="stat"><div class="k">roll</div><div class="v" id="imuRoll">—</div></div>
+      <div class="stat"><div class="k">yaw</div><div class="v" id="imuYaw">—</div></div>
+      <div class="stat"><div class="k">accel x</div><div class="v" id="imuAx">—</div></div>
+      <div class="stat"><div class="k">accel y</div><div class="v" id="imuAy">—</div></div>
+      <div class="stat"><div class="k">accel z</div><div class="v" id="imuAz">—</div></div>
+      <div class="stat"><div class="k">gyro x</div><div class="v" id="imuGx">—</div></div>
+      <div class="stat"><div class="k">gyro y</div><div class="v" id="imuGy">—</div></div>
+      <div class="stat"><div class="k">gyro z</div><div class="v" id="imuGz">—</div></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="imuPoll">한 번 조회</button>
+      <label class="dim"><input type="checkbox" id="imuStream"> 5Hz 스트림</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>제스처</h3>
+    <div class="row">
+      <span class="readout" id="gesture">—</span>
+      <span class="dim" style="font-size:.8rem">tap / double_tap / shake / freefall 등</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HUB ============ -->
+<section class="panel" id="panel-hub">
+  <div class="card">
+    <h3>전원 / 배터리 <span class="tag">bat</span></h3>
+    <div class="stats">
+      <div class="stat"><div class="k">battery</div><div class="v" id="bat">—</div></div>
+      <div class="stat"><div class="k">voltage</div><div class="v" id="batV">—</div></div>
+      <div class="stat"><div class="k">current</div><div class="v" id="batI">—</div></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="batPoll">조회</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>버튼 상태</h3>
+    <div class="grid3">
+      <div class="stat"><div class="k">CENTER</div><div class="v" id="btnC">—</div></div>
+      <div class="stat"><div class="k">LEFT (−)</div><div class="v" id="btnL">—</div></div>
+      <div class="stat"><div class="k">RIGHT (+)</div><div class="v" id="btnR">—</div></div>
+      <div class="stat"><div class="k">BLUETOOTH</div><div class="v" id="btnB">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>제어</h3>
+    <div class="row">
+      <button id="hubShutdown" class="danger">shutdown</button>
+      <button id="hubReboot" class="ghost">reboot</button>
+      <button id="hubInfo">info</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONSOLE ============ -->
+<section class="panel" id="panel-console">
+  <div class="card">
+    <h3>로그 / REPL</h3>
+    <div id="console"></div>
+    <div class="row" style="margin-top:8px">
+      <input id="rawInput" type="text" placeholder="raw 명령 (예: drv fwd, mot A 500, raw print('hi'))" style="flex:1">
+      <button id="rawSend">send</button>
+      <button id="rawClear" class="ghost">clear</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div class="footer-bar">
+  <span class="dim" style="font-size:.8rem">last:</span>
+  <span class="readout" id="lastMsg" style="flex:1">—</span>
+  <button id="estop" class="danger">E-STOP</button>
+</div>
+
+<script>
+//============================================================
+// WebSocket
+//============================================================
+let ws = null;
+const cons = document.getElementById('console');
+const lastMsg = document.getElementById('lastMsg');
+const hubPill = document.getElementById('hubPill');
+const hubMsg = document.getElementById('hubMsg');
+
+function logLine(text, cls='sys') {
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = text;
+  cons.appendChild(div);
+  cons.scrollTop = cons.scrollHeight;
+  while (cons.childElementCount > 500) cons.firstChild.remove();
+}
+
+function connectWS() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => logLine('[ws] open');
+  ws.onclose = () => { logLine('[ws] closed — 재연결'); setTimeout(connectWS, 1000); };
+  ws.onerror = () => logLine('[ws] error', 'err');
+  ws.onmessage = (e) => {
+    lastMsg.textContent = e.data;
+    if (e.data.startsWith('err ')) logLine('← ' + e.data, 'err');
+    else if (e.data.startsWith('tlm ')) handleTelemetry(e.data.slice(4));
+    else if (e.data.startsWith('log ')) logLine('hub: ' + e.data.slice(4), 'out');
+    else logLine('← ' + e.data, 'out');
+  };
+}
+connectWS();
+
+function send(line) {
+  if (!ws || ws.readyState !== 1) return;
+  ws.send(line);
+  logLine('→ ' + line, 'in');
+}
+
+//============================================================
+// Hub connect/disconnect (HTTP)
+//============================================================
+async function pollHealth() {
+  try {
+    const r = await fetch('/healthz');
+    const j = await r.json();
+    hubPill.classList.toggle('ok', j.hub_connected);
+    hubPill.classList.toggle('bad', !j.hub_connected);
+    hubMsg.textContent = j.hub_connected ? 'hub connected' : 'no hub (UI mode)';
+  } catch (e) { hubMsg.textContent = 'server gone?'; }
+}
+setInterval(pollHealth, 2000); pollHealth();
+
+document.getElementById('btnConnect').onclick = async () => {
+  hubMsg.textContent = 'connecting...';
+  const r = await fetch('/api/connect', {method:'POST'});
+  const j = await r.json();
+  logLine('[connect] ' + JSON.stringify(j), j.ok ? 'sys' : 'err');
+  pollHealth();
+};
+document.getElementById('btnDisconnect').onclick = async () => {
+  await fetch('/api/disconnect', {method:'POST'});
+  logLine('[disconnect]');
+  pollHealth();
+};
+
+//============================================================
+// Tabs
+//============================================================
+document.getElementById('tabs').addEventListener('click', (e) => {
+  if (e.target.tagName !== 'BUTTON') return;
+  const tab = e.target.dataset.tab;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + tab));
+});
+
+//============================================================
+// DRIVE pad — hold to move, release to stop
+//============================================================
+function bindHold(el, holdCmd, releaseCmd='drv stp') {
+  const down = (e) => { e.preventDefault(); el.classList.add('down'); send(holdCmd); };
+  const up   = (e) => { e.preventDefault(); el.classList.remove('down'); send(releaseCmd); };
+  el.addEventListener('pointerdown', down);
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('pointerleave', up);
+}
+document.querySelectorAll('[data-hold]').forEach(b => bindHold(b, b.dataset.hold));
+document.querySelectorAll('[data-cmd]').forEach(b => b.addEventListener('click', () => send(b.dataset.cmd)));
+document.addEventListener('visibilitychange', () => { if (document.hidden) send('drv stp'); });
+
+//============================================================
+// PORTS A-F
+//============================================================
+const PORTS = ['A','B','C','D','E','F'];
+const portList = document.getElementById('portList');
+PORTS.forEach(p => {
+  const card = document.createElement('div');
+  card.className = 'card port';
+  card.dataset.mode = 'motor';
+  card.innerHTML = `
+    <h3>
+      <span class="label">${p}</span>
+      <select data-port="${p}" data-role="mode">
+        <option value="motor">motor</option>
+        <option value="sensor">sensor (auto)</option>
+      </select>
+      <span class="tag" data-port="${p}" data-role="kind">unknown</span>
+    </h3>
+    <div data-mode-view="motor">
+      <div class="row">
+        <label class="dim">속도</label>
+        <input type="range" min="-1000" max="1000" value="0" data-port="${p}" data-role="speed" style="flex:1">
+        <span class="readout" data-port="${p}" data-role="speedv" style="min-width:60px;text-align:right">0</span>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button data-port="${p}" data-role="run">run</button>
+        <button data-port="${p}" data-role="stop">stop</button>
+        <button data-port="${p}" data-role="brake">brake</button>
+        <button data-port="${p}" data-role="hold">hold</button>
+        <input type="number" data-port="${p}" data-role="angle" placeholder="각도°" style="width:80px">
+        <button data-port="${p}" data-role="runangle">run angle</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <span class="dim" style="font-size:.8rem">readout:</span>
+        <span class="readout" data-port="${p}" data-role="readout">angle=— speed=—</span>
+      </div>
+    </div>
+    <div data-mode-view="sensor" style="display:none">
+      <div class="row">
+        <span class="readout" data-port="${p}" data-role="sensor-readout" style="flex:1">— (connect 후 자동 감지)</span>
+        <button data-port="${p}" data-role="poll">poll</button>
+      </div>
+      <div class="dim" style="font-size:.8rem;margin-top:6px">
+        지원: color (RGB/반사/색이름) · distance · force · light
+      </div>
+    </div>
+  `;
+  portList.appendChild(card);
+});
+
+portList.addEventListener('change', (e) => {
+  const t = e.target;
+  const port = t.dataset.port;
+  if (t.dataset.role === 'mode') {
+    const card = t.closest('.card');
+    card.dataset.mode = t.value;
+    card.querySelectorAll('[data-mode-view]').forEach(v => {
+      v.style.display = (v.dataset.modeView === (t.value === 'sensor' ? 'sensor' : 'motor')) ? '' : 'none';
+    });
+  } else if (t.dataset.role === 'speed') {
+    card.querySelector?.(`[data-role=speedv][data-port="${port}"]`);
+    document.querySelector(`[data-role=speedv][data-port="${port}"]`).textContent = t.value;
+  }
+});
+portList.addEventListener('input', (e) => {
+  if (e.target.dataset.role === 'speed') {
+    const port = e.target.dataset.port;
+    document.querySelector(`[data-role=speedv][data-port="${port}"]`).textContent = e.target.value;
+  }
+});
+portList.addEventListener('click', (e) => {
+  const t = e.target; if (t.tagName !== 'BUTTON') return;
+  const port = t.dataset.port; const role = t.dataset.role; if (!port) return;
+  const speed = document.querySelector(`[data-role=speed][data-port="${port}"]`)?.value;
+  const angle = document.querySelector(`[data-role=angle][data-port="${port}"]`)?.value;
+  switch (role) {
+    case 'run':      send(`mot ${port} ${speed}`); break;
+    case 'stop':     send(`mot ${port} stop`); break;
+    case 'brake':    send(`mot ${port} brake`); break;
+    case 'hold':     send(`mot ${port} hold`); break;
+    case 'runangle': if (angle) send(`mot ${port} angle ${angle} ${speed}`); break;
+    case 'poll':     send(`sensor ${port}`); break;
+  }
+});
+
+//============================================================
+// DISPLAY (5x5 matrix)
+//============================================================
+const matrix = document.getElementById('matrix');
+const dspState = Array.from({length:5}, () => Array(5).fill(0));
+const STEP = [0, 25, 50, 100];
+for (let r=0; r<5; r++) for (let c=0; c<5; c++) {
+  const px = document.createElement('div');
+  px.className = 'px'; px.dataset.r = r; px.dataset.c = c; px.dataset.on = '0';
+  px.addEventListener('click', () => {
+    const cur = dspState[r][c];
+    const next = STEP[(STEP.indexOf(cur) + 1) % STEP.length];
+    dspState[r][c] = next; px.dataset.on = String(next);
+  });
+  matrix.appendChild(px);
+}
+document.getElementById('dspClear').onclick = () => {
+  for (let r=0; r<5; r++) for (let c=0; c<5; c++) {
+    dspState[r][c] = 0; matrix.children[r*5+c].dataset.on = '0';
+  }
+  send('dsp clear');
+};
+document.getElementById('dspSend').onclick = () => {
+  for (let r=0; r<5; r++) for (let c=0; c<5; c++) {
+    if (dspState[r][c]) send(`dsp pixel ${r} ${c} ${dspState[r][c]}`);
+  }
+};
+document.getElementById('dspTextSend').onclick = () => {
+  const t = document.getElementById('dspText').value.trim();
+  if (t) send(`dsp text ${t}`);
+};
+
+const ICONS = ['HEART','HAPPY','SAD','SMILE','ASLEEP','SURPRISED','CONFUSED','ANGRY',
+               'ARROW_N','ARROW_E','ARROW_S','ARROW_W','ARROW_NE','ARROW_NW','ARROW_SE','ARROW_SW',
+               'TRIANGLE','SQUARE','DIAMOND','TARGET','CLOCK12','HOUSE','UMBRELLA','BUTTERFLY'];
+const iconList = document.getElementById('iconList');
+ICONS.forEach(name => {
+  const b = document.createElement('button'); b.textContent = name;
+  b.onclick = () => send(`dsp icon ${name}`);
+  iconList.appendChild(b);
+});
+
+//============================================================
+// SOUND
+//============================================================
+document.getElementById('beepSend').onclick = () => {
+  const f = document.getElementById('beepFreq').value;
+  const ms = document.getElementById('beepMs').value;
+  send(`snd beep ${f} ${ms}`);
+};
+const NOTES = ['C4','D4','E4','F4','G4','A4','B4','C5','D5','E5','F5','G5','A5'];
+const noteRow = document.getElementById('noteRow');
+NOTES.forEach(n => {
+  const b = document.createElement('button'); b.textContent = n;
+  b.onclick = () => {
+    const ms = document.getElementById('beepMs').value || 200;
+    send(`snd note ${n} ${ms}`);
+  };
+  noteRow.appendChild(b);
+});
+
+//============================================================
+// LIGHT
+//============================================================
+function rgb() {
+  return [+document.getElementById('r').value, +document.getElementById('g').value, +document.getElementById('b').value];
+}
+function updPreview() {
+  const [r,g,b] = rgb();
+  document.getElementById('rv').textContent = r;
+  document.getElementById('gv').textContent = g;
+  document.getElementById('bv').textContent = b;
+  document.getElementById('preview').style.background = `rgb(${r},${g},${b})`;
+}
+['r','g','b'].forEach(id => document.getElementById(id).addEventListener('input', updPreview));
+updPreview();
+document.getElementById('litSend').onclick = () => { const [r,g,b] = rgb(); send(`lit ${r} ${g} ${b}`); };
+document.getElementById('litOff').onclick = () => send('lit 0 0 0');
+
+const SWATCHES = [
+  ['빨강','#e25555'], ['주황','#ff8b3a'], ['노랑','#f4d35e'], ['초록','#3aaf3a'],
+  ['청록','#3acbb5'], ['파랑','#3a7fff'], ['보라','#b86bff'], ['핑크','#ff6bb8'],
+  ['흰색','#ffffff']
+];
+const litSwatches = document.getElementById('litSwatches');
+SWATCHES.forEach(([name,hex]) => {
+  const s = document.createElement('div'); s.className = 'swatch'; s.style.background = hex; s.title = name;
+  s.onclick = () => {
+    const m = hex.match(/#(\w\w)(\w\w)(\w\w)/);
+    const [r,g,b] = [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)];
+    document.getElementById('r').value = r; document.getElementById('g').value = g; document.getElementById('b').value = b;
+    updPreview(); send(`lit ${r} ${g} ${b}`);
+  };
+  litSwatches.appendChild(s);
+});
+
+//============================================================
+// IMU
+//============================================================
+document.getElementById('imuPoll').onclick = () => send('imu');
+let imuTimer = null;
+document.getElementById('imuStream').addEventListener('change', (e) => {
+  if (e.target.checked) imuTimer = setInterval(() => send('imu'), 200);
+  else { clearInterval(imuTimer); imuTimer = null; }
+});
+
+//============================================================
+// HUB
+//============================================================
+document.getElementById('batPoll').onclick = () => send('bat');
+document.getElementById('hubShutdown').onclick = () => { if (confirm('정말 허브를 끄나요?')) send('hub shutdown'); };
+document.getElementById('hubReboot').onclick = () => send('hub reboot');
+document.getElementById('hubInfo').onclick = () => send('hub info');
+
+//============================================================
+// CONSOLE
+//============================================================
+document.getElementById('rawSend').onclick = () => {
+  const v = document.getElementById('rawInput').value.trim();
+  if (v) { send(v); document.getElementById('rawInput').value = ''; }
+};
+document.getElementById('rawInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('rawSend').click();
+});
+document.getElementById('rawClear').onclick = () => cons.textContent = '';
+
+//============================================================
+// WHEEL CALIBRATION WIZARD
+//============================================================
+const CAL_PORTS = ['A','B','C','D'];
+const calState = JSON.parse(localStorage.getItem('legoagent.cal') || '{}');
+let calIdx = 0;
+
+function calRender() {
+  const port = CAL_PORTS[calIdx];
+  document.getElementById('calStepNum').textContent = calIdx + 1;
+  document.getElementById('calPort').textContent = port;
+  // 기존 입력값 복원
+  document.getElementById('calWheel').value = calState[port]?.wheel || '';
+  document.getElementById('calDir').value = calState[port]?.dir || '';
+  // 결과 테이블
+  const result = document.getElementById('calResult');
+  if (Object.keys(calState).length === 0) {
+    result.innerHTML = '<div class="dim">— 아직 비어있음 —</div>';
+  } else {
+    result.innerHTML = CAL_PORTS.map(p => {
+      const s = calState[p];
+      if (!s) return `<div class="dim">port ${p}: —</div>`;
+      const w = s.wheel || '?';
+      const d = s.dir || '?';
+      return `<div>port ${p}: <b>${w}</b> · ${d}</div>`;
+    }).join('');
+  }
+  // 다 끝나면 코드 생성
+  const allDone = CAL_PORTS.every(p => calState[p]?.wheel && calState[p]?.dir);
+  document.getElementById('calCodeCard').style.display = allDone ? '' : 'none';
+  if (allDone) calRenderCode();
+}
+
+function calRenderCode() {
+  const lines = [
+    'from pybricks.pupdevices import Motor',
+    'from pybricks.parameters import Port, Direction',
+    '',
+  ];
+  const wheelToVar = { FL: 'FL', FR: 'FR', RL: 'RL', RR: 'RR' };
+  const drive = { left: [], right: [] };
+  CAL_PORTS.forEach(p => {
+    const s = calState[p];
+    if (!s || s.wheel === 'none' || !s.wheel) {
+      lines.push(`# port ${p}: skipped (${s?.wheel || 'unmapped'})`);
+      return;
+    }
+    const v = wheelToVar[s.wheel] || s.wheel;
+    const dir = s.dir === 'reverse' ? 'COUNTERCLOCKWISE' : 'CLOCKWISE';
+    lines.push(`${v} = Motor(Port.${p}, Direction.${dir})  # ${s.wheel}`);
+    if (s.wheel === 'FL' || s.wheel === 'RL') drive.left.push(v);
+    if (s.wheel === 'FR' || s.wheel === 'RR') drive.right.push(v);
+  });
+  lines.push('');
+  lines.push('def drive(left_speed, right_speed):');
+  if (drive.left.length) lines.push('    ' + drive.left.map(v => `${v}.run(left_speed)`).join('; '));
+  if (drive.right.length) lines.push('    ' + drive.right.map(v => `${v}.run(right_speed)`).join('; '));
+  lines.push('');
+  lines.push('def stop():');
+  const all = [...drive.left, ...drive.right];
+  if (all.length) lines.push('    ' + all.map(v => `${v}.brake()`).join('; '));
+  document.getElementById('calCode').textContent = lines.join('\n');
+}
+
+function calSaveStep() {
+  const port = CAL_PORTS[calIdx];
+  const wheel = document.getElementById('calWheel').value;
+  const dir = document.getElementById('calDir').value;
+  if (wheel || dir) {
+    calState[port] = { wheel, dir };
+    localStorage.setItem('legoagent.cal', JSON.stringify(calState));
+  }
+}
+
+document.getElementById('calNudge').onclick = () => {
+  const port = CAL_PORTS[calIdx];
+  const speed = +document.getElementById('calSpeed').value;
+  const dur = +document.getElementById('calDur').value;
+  send(`mot ${port} ${speed}`);
+  setTimeout(() => send(`mot ${port} brake`), dur);
+};
+
+document.getElementById('calNext').onclick = () => {
+  calSaveStep();
+  if (calIdx < CAL_PORTS.length - 1) calIdx++;
+  calRender();
+};
+document.getElementById('calBack').onclick = () => {
+  calSaveStep();
+  if (calIdx > 0) calIdx--;
+  calRender();
+};
+document.getElementById('calReset').onclick = () => {
+  if (confirm('캘리브레이션 결과를 초기화할까요?')) {
+    for (const k in calState) delete calState[k];
+    localStorage.removeItem('legoagent.cal');
+    calIdx = 0;
+    calRender();
+  }
+};
+['calWheel','calDir'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => { calSaveStep(); calRender(); });
+});
+document.getElementById('calCopy').onclick = async () => {
+  const text = document.getElementById('calCode').textContent;
+  try { await navigator.clipboard.writeText(text); document.getElementById('calCopied').textContent = '복사됨'; }
+  catch (e) { document.getElementById('calCopied').textContent = '실패: ' + e; }
+  setTimeout(() => document.getElementById('calCopied').textContent = '', 2000);
+};
+calRender();
+
+//============================================================
+// E-STOP
+//============================================================
+document.getElementById('estop').onclick = () => {
+  send('drv stp');
+  PORTS.forEach(p => send(`mot ${p} brake`));
+};
+
+//============================================================
+// Telemetry parse: "tlm <topic> k=v k=v ..."
+//============================================================
+function handleTelemetry(payload) {
+  const [topic, ...kvs] = payload.split(/\s+/);
+  const data = {};
+  kvs.forEach(kv => { const [k,v] = kv.split('='); data[k] = v; });
+  if (topic === 'imu') {
+    for (const [k,v] of Object.entries(data)) {
+      const el = document.getElementById('imu' + k.charAt(0).toUpperCase() + k.slice(1));
+      if (el) el.textContent = v;
+    }
+  } else if (topic === 'bat') {
+    if (data.pct) document.getElementById('bat').textContent = data.pct + '%';
+    if (data.v)   document.getElementById('batV').textContent = data.v + ' V';
+    if (data.i)   document.getElementById('batI').textContent = data.i + ' mA';
+  } else if (topic === 'btn') {
+    ['c','l','r','b'].forEach(k => {
+      const el = document.getElementById('btn' + k.toUpperCase());
+      if (el && data[k] !== undefined) el.textContent = data[k] === '1' ? 'pressed' : '—';
+    });
+  } else if (topic === 'gesture') {
+    document.getElementById('gesture').textContent = data.kind || '—';
+  } else if (topic === 'port') {
+    const port = data.port;
+    if (data.kind) {
+      const kindEl = document.querySelector(`[data-role=kind][data-port="${port}"]`);
+      if (kindEl) kindEl.textContent = data.kind;
+    }
+    if (data.angle !== undefined || data.speed !== undefined) {
+      const el = document.querySelector(`[data-role=readout][data-port="${port}"]`);
+      if (el) el.textContent = `angle=${data.angle ?? '—'} speed=${data.speed ?? '—'}`;
+    }
+    if (data.value !== undefined) {
+      const el = document.querySelector(`[data-role=sensor-readout][data-port="${port}"]`);
+      if (el) el.textContent = `value=${data.value}`;
+    }
+  }
+}
+</script>
+</body>
+</html>

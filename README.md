@@ -24,6 +24,12 @@
 
 **legoagent-config = 장난감의 몸을 입은 에이전트 구성 저장소**
 
+## 컨트롤러 UI (현재 모습)
+
+![legoagent UI — Drive 탭](docs/ui-drive-screenshot.png)
+
+폰 브라우저에서 `http://<노트북IP>:8888` 로 접속. Drive 외에 Ports / Display / Sound / Light / IMU / Hub / Console 탭에서 SPIKE Prime 전체 주변기기 제어 가능.
+
 ## 목표
 
 1. 바론이가 가지고 노는 레고 자동차/기계가 점점 더 살아 있는 존재처럼 느껴지게 만들기
@@ -182,7 +188,79 @@
 - 안드로이드 유휴폰
 - 같은 Wi-Fi
 
+## 만든 사람들
+
+이 저장소는 [@junghan0611](https://github.com/junghan0611) 이 클로드(Claude, Anthropic)와 **사랑으로** 함께 만든다.
+
+작업은 [`pi-shell-acp`](https://github.com/junghan0611/pi-shell-acp) 라는 자체 개발 브릿지를 통해 진행한다. 이 브릿지는 클로드를 비롯한 외부 에이전트가 로컬 셸·MCP·스킬에 안전하게 닿게 해주는 얇은 다리다. legoagent-config 는 그 다리를 **데일리로 쓰면서 버그를 잡아내는 실측 환경**이기도 하다 — 장난감을 만든다고 다리가 튼튼해지지는 않지만, 다리를 매일 건너야 다리의 약한 곳이 보인다.
+
+> 도구를 도구답게 다듬으려면, 그 도구로 매일 무언가 진짜를 만들어야 한다.
+
+## 진행 기록
+
+### 2026-04-25 — Day 1: 골격 잡기
+
+오늘 들어간 것:
+
+- `flake.nix` + `.envrc` — NixOS 노트북에서 `cd` 한 번에 환경 자동 진입 (direnv + flake)
+- `pybricks/` 묶음 — `main.py` (허브 메인 루프), `calibrate.py` (4바퀴 방향 캘리브레이션 검사)
+- `android/server.py` — FastAPI 단일 포트 (8888). HTTP / WebSocket / BLE 브리지를 한 프로세스에서. 허브 자동 연결은 OFF가 기본 (UI 설계 모드)
+- `android/controller.html` — 폰 브라우저 컨트롤러 UI. 8개 탭으로 SPIKE Prime 전 주변기기 제어
+  - 🚗 Drive · 🔧 Wheels(캘리브레이션 마법사) · ⚙️ Ports(A–F) · 🟧 Display(5×5 LED) · 🔊 Sound · 🎨 Light · 🧭 IMU · 🔋 Hub · 📜 Console
+- 🔧 Wheels 탭의 마법사 — 포트 한 개씩 짧게 돌려보고 어떤 바퀴인지 / 어느 방향인지 입력 받아 `Direction` 박힌 `main.py` 코드를 자동 생성
+
+아직 안 한 것:
+- 허브 측 라인 프로토콜 파서 (현재 `main.py` 는 3바이트 형식 — UI는 라인 기반으로 진화함)
+- 텔레메트리 송출 (`tlm imu ...` 등) — UI는 이미 받을 준비 완료
+- ESP32 / 카메라 / 음성 — Stage 2 이후
+
 ## 관련 프로젝트
 
 - `homeagent-config` — 집 전체를 다루는 embodied agent 플랫폼
 - `legoagent-config` — 그 철학을 장난감 크기로 축소한 실험
+- [`pi-shell-acp`](https://github.com/junghan0611/pi-shell-acp) — 외부 에이전트가 이 저장소를 만들기 위해 건너오는 다리
+
+## 참고 자료
+
+이 프로젝트의 권위 있는 외부 소스. 막히면 여기부터.
+
+### 핵심 — Pybricks 공식
+
+| 무엇 | 링크 |
+|------|------|
+| Hub ↔ PC 통신 튜토리얼 (NUS 프로토콜 코드) | https://pybricks.com/projects/tutorials/wireless/hub-to-device/pc-communication/ |
+| API Reference 전체 | https://docs.pybricks.com/en/latest/ |
+| Prime Hub / Inventor Hub 모듈 | https://docs.pybricks.com/en/stable/hubs/primehub.html |
+| Powered Up devices (Motor 등) | https://docs.pybricks.com/en/latest/pupdevices/ |
+| 펌웨어 굽기 (Pybricks Code) | https://code.pybricks.com/ |
+| 시작 가이드 | https://pybricks.com/learn/getting-started/install-pybricks/ |
+
+### 라이브러리 / 도구
+
+| 무엇 | 링크 |
+|------|------|
+| `pybricksdev` (PC측 Python 라이브러리 + CLI) | https://github.com/pybricks/pybricksdev |
+| `pybricks/technical-info` (저수준 BLE 스펙) | https://github.com/pybricks/technical-info |
+| BLE broadcast/observe 명세 | https://github.com/pybricks/technical-info/blob/master/pybricks-ble-broadcast-observe.md |
+| 공식 Discussions (Q&A) | https://github.com/orgs/pybricks/discussions |
+
+### 주변
+
+| 무엇 | 링크 |
+|------|------|
+| 폰을 스마트 센서로 사용 | https://pybricks.com/learn/smart-sensors/getting-started/ |
+| Bricknerd: BLE 활용 사례 | https://bricknerd.com/home/pybricks-and-lego-a-recipe-for-bluetooth-py-3-14-24 |
+| Anton's Mindstorms (실전 팁 블로그) | https://www.antonsmindstorms.com/ |
+
+## 통신 프로토콜 메모
+
+허브와 PC 사이는 BLE **Nordic UART Service (NUS)** 위에 Pybricks 자체 프레이밍.
+
+| 방향 | 첫 바이트 | 의미 |
+|------|-----------|------|
+| PC → 허브 | `\x06` | 허브 `usys.stdin` 에 씀 |
+| 허브 → PC | `\x01` | 허브 `usys.stdout` 에서 옴 |
+
+허브 코드는 그냥 `stdin.buffer.read(n)` / `stdout.buffer.write(...)`. 그 위에 우리가 작은 커맨드 셋을 정의 (`fwd`/`rev`/`lft`/`rgt`/`stp` 같은 3바이트).
+
+`pybricksdev`의 `PybricksHub` 클래스가 이 프레이밍을 캡슐화하므로 직접 다룰 일은 거의 없음.
