@@ -28,7 +28,7 @@
 
 ![legoagent UI — Drive 탭](docs/ui-drive-screenshot.png)
 
-폰 브라우저에서 `http://<노트북IP>:8888` 로 접속. Drive 외에 Ports / Display / Sound / Light / IMU / Hub / Console 탭에서 SPIKE Prime 전체 주변기기 제어 가능.
+폰 브라우저에서 `http://<노트북IP>:8888` 로 접속. 현재 검증된 핵심 루프는 Drive 탭의 B/F 모터 주행 제어다. 나머지 Ports / Display / Sound / Light / IMU / Hub 탭은 UI 골격이며 허브 측 구현은 단계적으로 붙인다.
 
 ## 목표
 
@@ -183,10 +183,45 @@
 ### 준비물 체크
 
 - SPIKE Prime 허브
-- 현재 차체 (바퀴 4개 연결 상태)
+- 현재 차체 (모터 B/F 연결)
 - NixOS 노트북
 - 안드로이드 유휴폰
 - 같은 Wi-Fi
+
+## NixOS / Linux 실행 메모
+
+이 저장소의 현재 검증 경로는 **NixOS 노트북 ↔ BLE ↔ SPIKE Prime**, 그리고 **폰 브라우저 ↔ 노트북 8888 포트**다.
+
+```bash
+# 1. 개발 셸 진입(direnv 사용 시 cd만으로 됨)
+direnv allow
+
+# 2. DFU/USB 권한 문제 시: NixOS에서는 /etc 대신 /run udev rules 사용
+just udev-install
+# USB 케이블을 뺐다 다시 꽂고, DFU 모드에서 펌웨어 플래시
+just flash
+
+# 3. 허브/모터 단독 검증: 서버 없이 B/F 모터가 차례로 돌아야 한다
+just smoke-motor
+
+# 4. 풀스택: main.py 업로드 + BLE 연결 + 웹 서버
+just run
+```
+
+`just run`은 `0.0.0.0:8888`로 서버를 띄운다. 노트북에서는 `http://localhost:8888`, 폰에서는 같은 Wi-Fi에서 터미널에 표시되는 `http://<노트북IP>:8888`로 접속한다.
+
+폰에서 안 열리면 서버보다 **Linux 방화벽/포트**를 먼저 확인한다.
+
+```bash
+ss -ltnp | grep 8888          # 0.0.0.0:8888 확인
+sudo iptables -I INPUT -p tcp --dport 8888 -j ACCEPT  # 임시 오픈
+```
+
+영구 오픈은 NixOS 설정에 다음을 넣는 방식이 좋다.
+
+```nix
+networking.firewall.allowedTCPPorts = [ 8888 ];
+```
 
 ## 만든 사람들
 
@@ -204,14 +239,15 @@
 
 - `flake.nix` + `.envrc` — NixOS 노트북에서 `cd` 한 번에 환경 자동 진입 (direnv + flake)
 - `pybricks/` 묶음 — `main.py` (허브 메인 루프), `calibrate.py` (4바퀴 방향 캘리브레이션 검사)
-- `android/server.py` — FastAPI 단일 포트 (8888). HTTP / WebSocket / BLE 브리지를 한 프로세스에서. 허브 자동 연결은 OFF가 기본 (UI 설계 모드)
-- `android/controller.html` — 폰 브라우저 컨트롤러 UI. 8개 탭으로 SPIKE Prime 전 주변기기 제어
-  - 🚗 Drive · 🔧 Wheels(캘리브레이션 마법사) · ⚙️ Ports(A–F) · 🟧 Display(5×5 LED) · 🔊 Sound · 🎨 Light · 🧭 IMU · 🔋 Hub · 📜 Console
-- 🔧 Wheels 탭의 마법사 — 포트 한 개씩 짧게 돌려보고 어떤 바퀴인지 / 어느 방향인지 입력 받아 `Direction` 박힌 `main.py` 코드를 자동 생성
+- `android/server.py` — FastAPI 단일 포트 (8888). HTTP / WebSocket / BLE 브리지를 한 프로세스에서. `just run` 시 허브 연결, `pybricks/main.py` 업로드/실행까지 자동화
+- `android/controller.html` — 폰 브라우저 컨트롤러 UI. Drive 탭으로 B/F 모터 차체 제어 검증 완료
+- `pybricks/main.py` — 라인 기반 stdin 프로토콜. Pybricks stdin이 `str`로 들어오는 점에 맞춰 bytes/str 혼용 제거
+- `justfile` — NixOS bring-up용 `udev-install`, `flash`, `alive`, `hello`, `smoke-motor`, `run` 태스크
+- 원인 기록: 단독 `smoke_motor_bf.py`는 B/F 모터가 정상 회전했으므로 배선/펌웨어/BLE 업로드는 정상. 웹 제어 실패 원인은 허브 측 `main.py`가 과거 3바이트/bytes 프로토콜과 라인 기반 UI 프로토콜을 섞고, `stdin.buffer.read(64)` 및 `.encode()` 처리에서 막히거나 터진 것. `stdin.read(1)` + `str` 라인 파서로 정리하니 Drive 제어가 살아남.
 
 아직 안 한 것:
-- 허브 측 라인 프로토콜 파서 (현재 `main.py` 는 3바이트 형식 — UI는 라인 기반으로 진화함)
-- 텔레메트리 송출 (`tlm imu ...` 등) — UI는 이미 받을 준비 완료
+- Display/Sound/IMU/Hub 탭의 허브 측 전체 구현 복원
+- 텔레메트리 송출 (`tlm imu ...` 등)
 - ESP32 / 카메라 / 음성 — Stage 2 이후
 
 ## 관련 프로젝트
@@ -261,6 +297,8 @@
 | PC → 허브 | `\x06` | 허브 `usys.stdin` 에 씀 |
 | 허브 → PC | `\x01` | 허브 `usys.stdout` 에서 옴 |
 
-허브 코드는 그냥 `stdin.buffer.read(n)` / `stdout.buffer.write(...)`. 그 위에 우리가 작은 커맨드 셋을 정의 (`fwd`/`rev`/`lft`/`rgt`/`stp` 같은 3바이트).
+허브 코드는 Pybricks `stdin`/`stdout`을 사용한다. 현재 `main.py`에서는 안정성을 위해 `stdin.read(1)`로 한 글자씩 받고, `\n` 기준으로 라인을 만든다. 서버/UI가 보내는 명령은 `drv fwd`, `drv stp`, `mot B 300` 같은 텍스트 라인이다.
 
-`pybricksdev`의 `PybricksHub` 클래스가 이 프레이밍을 캡슐화하므로 직접 다룰 일은 거의 없음.
+주의: Pybricks 환경에서 `stdin.read(1)` 결과는 bytes가 아니라 `str`로 들어올 수 있다. 허브 측 파서는 bytes 리터럴(`b"drv"`)과 `.encode()`를 섞지 말고 str 기준으로 유지한다.
+
+`pybricksdev`의 `PybricksHub` 클래스가 BLE 프레이밍을 캡슐화하므로 직접 다룰 일은 거의 없음.

@@ -5,3 +5,4 @@ __pycache__/
 .envrc.local
 result
 result-*
+firmware/*.zip

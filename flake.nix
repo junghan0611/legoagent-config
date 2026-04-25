@@ -36,6 +36,8 @@
             ripgrep fd   # 검색
             jq           # 응답 디버깅
             bluez        # bluetoothctl — 허브 페어링/스캔 확인용
+            libusb1      # pybricksdev USB backend (PyUSB)
+            dfu-util     # SPIKE Prime DFU 모드 펌웨어 플래시
           ];
 
           shellHook = ''
@@ -47,6 +49,7 @@
               .venv/bin/pip install --quiet pybricksdev
             fi
             export PATH="$PWD/.venv/bin:$PATH"
+            export LD_LIBRARY_PATH="${pkgs.libusb1}/lib:${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
 
             HOST_IP=$(${pkgs.iproute2}/bin/ip -4 -o route get 1.1.1.1 2>/dev/null \
               | awk '{print $7}' | head -1)

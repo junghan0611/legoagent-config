@@ -30,9 +30,14 @@ from pybricksdev.connections.pybricks import PybricksHubBLE
 log = logging.getLogger("legoagent")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
-HUB_NAME = os.getenv("HUB_NAME")  # None이면 첫 발견된 Pybricks 허브
-AUTOCONNECT = os.getenv("LEGOAGENT_AUTOCONNECT", "0") == "1" or bool(HUB_NAME)
 HERE = Path(__file__).parent
+PROJECT_ROOT = HERE.parent
+
+HUB_NAME = os.getenv("HUB_NAME")  # None이면 첫 발견된 Pybricks 허브
+# 기본값을 1로 변경 — 노트북 단일 흐름에서 항상 자동 연결
+AUTOCONNECT = os.getenv("LEGOAGENT_AUTOCONNECT", "1") == "1"
+# 허브에 자동 업로드/실행할 프로그램. 빈 문자열이면 업로드 스킵 (수동 버튼 실행)
+PROGRAM = os.getenv("LEGOAGENT_PROGRAM", str(PROJECT_ROOT / "pybricks" / "main.py"))
 
 
 class HubBridge:
@@ -41,6 +46,7 @@ class HubBridge:
     def __init__(self) -> None:
         self.hub: PybricksHubBLE | None = None
         self.lock = asyncio.Lock()
+        self.run_task: asyncio.Task | None = None
 
     async def connect(self) -> None:
         device = await find_device(name=HUB_NAME)
@@ -49,10 +55,37 @@ class HubBridge:
         self.hub = hub
         log.info("hub connected: %s", device)
 
+        if PROGRAM and Path(PROGRAM).exists():
+            log.info("auto-uploading program: %s", PROGRAM)
+            # hub.run은 wait=True 시 프로그램 종료까지 블로킹. 백그라운드 태스크로 굴린다.
+            # line_handler=True: pybricksdev이 hub stdout(\r\n EOL)을 라인으로 분리해서 print.
+            # print_output=True: 분리된 라인을 sys.stdout에 echo. (server console에서 hub의 ok/err/tlm 보임)
+            # 키보드 stdin forwarding은 호출자(pybricksdev CLI)에만 있는 거고, lib 레벨에선 끼지 않음.
+            self.run_task = asyncio.create_task(
+                hub.run(PROGRAM, wait=True, print_output=True, line_handler=True),
+                name="hub-program",
+            )
+            # 프로그램 시작 직후 stdin 채널이 안정될 때까지 살짝 대기
+            await asyncio.sleep(0.5)
+
     async def disconnect(self) -> None:
+        if self.run_task and not self.run_task.done():
+            try:
+                if self.hub is not None:
+                    await self.hub.stop_user_program()
+            except Exception as e:
+                log.warning("stop_user_program: %s", e)
+            self.run_task.cancel()
+            try:
+                await self.run_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self.run_task = None
         if self.hub:
-            await self.hub.disconnect()
-            self.hub = None
+            try:
+                await self.hub.disconnect()
+            finally:
+                self.hub = None
 
     async def send(self, line: str) -> None:
         """허브 stdin으로 한 줄 명령 전달. UI 설계 단계에서는 hub가 None이어도 NOP."""
@@ -75,6 +108,7 @@ async def lifespan(app: FastAPI):
             log.warning("autoconnect failed: %s", e)
     else:
         log.info("UI design mode — BLE not connected. POST /api/connect 또는 LEGOAGENT_AUTOCONNECT=1")
+        log.info("프로그램 자동 업로드 비활성: LEGOAGENT_PROGRAM='' 또는 위 환경변수")
     yield
     await bridge.disconnect()
 
