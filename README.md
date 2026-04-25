@@ -1,5 +1,7 @@
 # legoagent-config
 
+![legoagent-config — GLGMAN penguin father and son building a complex super-toy agent](docs/readme-hero-glgman-penguin-agent.jpg)
+
 레고 탈을 쓴 에이전트.
 
 `legoagent-config`는 바론이와 함께 노는 장난감에서 시작하지만, 장난감으로 끝나지 않는다. 이것은 `homeagent-config`의 장난감 버전이자, 물리 세계에 놓인 작은 embodied agent 실험이다.
