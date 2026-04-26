@@ -2,7 +2,8 @@
   description = "legoagent-config — 레고 탈을 쓴 에이전트 (RC car MVP)";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # homeagent-config와 동일 핀 — Flutter 3.38.3 보장 (양쪽 앱 호환성)
+    nixpkgs.url = "github:NixOS/nixpkgs/e576e3c9cf9b";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -24,8 +25,22 @@
           jinja2       # 미니 HTML
           pip
         ]);
+
+        # Android SDK (Flutter APK 빌드용) — homeagent-config flake.nix 참조
+        # 라이센스 명시 수락. NDK는 순수 Dart APK이라 불필요.
+        androidEnv = pkgs.androidenv.override { licenseAccepted = true; };
+        androidComposition = androidEnv.composeAndroidPackages {
+          buildToolsVersions = [ "34.0.0" "35.0.0" ];
+          platformVersions = [ "34" "35" ];
+          includeNDK = false;
+          includeEmulator = false;
+          includeSystemImages = false;
+        };
+        androidSdk = androidComposition.androidsdk;
       in
       {
+        # 기본 셸 — 노트북 ↔ 허브 BLE (Day 1 검증 환경)
+        # 폰 단독 운용 검증, Pybricks Code 다운로드 흐름은 이 셸에서 진행
         devShells.default = pkgs.mkShell {
           name = "legoagent";
 
@@ -61,7 +76,45 @@
             echo "  로컬 서버:  python -m uvicorn android.server:app --host 0.0.0.0 --port 8888"
             echo "  폰 접속:    http://''${HOST_IP:-<host-ip>}:8888"
             echo ""
-            echo "  BLE 권한이 안 잡히면 → systemctl --user status, bluetoothctl power on"
+            echo "  Flutter APK 작업:  cd flutter  (자동 진입) 또는 nix develop .#flutter"
+            echo ""
+          '';
+        };
+
+        # Flutter APK 빌드 셸 — flutter/.envrc로 자동 진입
+        # 폰 단독 운용 (노트북 빠진 모델). Pybricks Code = 설치, Flutter = 리모컨.
+        devShells.flutter = pkgs.mkShell {
+          name = "legoagent-flutter";
+
+          packages = with pkgs; [
+            flutter      # Flutter SDK 3.38.3 (homeagent와 동일)
+            androidSdk   # Android SDK 34/35
+            jdk17        # Gradle 빌드용 JDK
+            just git
+            ripgrep fd jq
+          ];
+
+          ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
+          ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
+          JAVA_HOME = pkgs.jdk17.home;
+          # NixOS aapt2 호환 — Gradle이 Maven 다운로드 대신 nix store aapt2 사용
+          GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${androidSdk}/libexec/android-sdk/build-tools/35.0.0/aapt2";
+
+          shellHook = ''
+            echo ""
+            echo "  legoagent-flutter — Pybricks Hub 폰 BLE 리모컨 빌드"
+            echo "  Flutter:        $(${pkgs.flutter}/bin/flutter --version --machine 2>/dev/null \
+              | ${pkgs.jq}/bin/jq -r '.frameworkVersion' 2>/dev/null || echo unknown)"
+            echo "  ANDROID_HOME:   $ANDROID_HOME"
+            echo "  JAVA_HOME:      $JAVA_HOME"
+            echo ""
+            echo "  앱 생성 (한 번):  flutter create --project-name legoagent --org com.legoagent ."
+            echo "  디버그 빌드:     flutter build apk --debug"
+            echo "  폰 설치:         adb install -r build/app/outputs/flutter-apk/app-debug.apk"
+            echo "  핫리로드:        flutter run -d <device-id>"
+            echo ""
+            echo "  주의: NixOS adb USB는 system-level programs.adb.enable 필요."
+            echo "        대안 — 무선 디버깅(adb pair) 또는 APK 수동 전송."
             echo ""
           '';
         };
