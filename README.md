@@ -250,6 +250,30 @@ networking.firewall.allowedTCPPorts = [ 8888 ];
 - 텔레메트리 송출 (`tlm imu ...` 등)
 - ESP32 / 카메라 / 음성 — Stage 2 이후
 
+### 2026-04-26 — Day 2: 폰 단독 모델로 방향 잡기
+
+코드는 안 쓰고 방향을 못 박았다. 노트북을 빼는 길을 어떻게 갈지가 정해진 날.
+
+들어간 것:
+
+- `flutter/README.md` — Flutter BLE MVP 계획 + 0.5단계 영구 저장 검증 게이트 + homeagent의 `BleRelay` 통째 이식 금지 메모. WebView/UI는 후순위로 미루고 BLE write path 증명을 1차 목표로 좁혔다.
+- 역할 분리 결정: **Pybricks Code = 펌웨어/프로그램 설치 도구**, **Flutter App = 바론이 리모컨 (START + stdin)**. Flutter가 업로드까지 떠안으면 MVP가 무너지므로 앱은 업로드를 모르도록 못 박음.
+
+확인된 것 (`pybricksdev` 2.3.2 소스 직접 확인):
+
+- `pybricksdev run ble`은 **RAM 적재 + 즉시 실행** 경로다. `connections/pybricks.py:502`의 `start_user_program` 독스트링이 *"already in RAM on the hub"* 라고 못박고, 업로드는 `WRITE_USER_PROGRAM_META` (0x03) + `COMMAND_WRITE_USER_RAM` (0x04)만 쓴다.
+- 즉 현행 `just upload` (= `pybricksdev run ble`)는 전원 사이클을 못 견딘다 → 폰 단독 운용 검증에는 부적합. 노트북 디버그용으로만 남긴다.
+- 슬롯 시스템은 펌웨어가 지원한다 (`_num_of_slots`, `_selected_slot`). START 페이로드는 슬롯 허브에서 `[0x01, slot]`이고 구형은 `[0x01]`. Flutter MVP는 두 형태 모두 버튼으로 두기로 함.
+
+다음 게이트:
+
+1. Pybricks Code 웹앱에서 `pybricks/main.py`를 hub slot 0에 **Download** (Run 아님)
+2. 노트북 BLE 끊고 허브 전원 OFF/ON
+3. 다시 BLE 붙여 START 보냈을 때 `main.py`가 살아남는지 확인
+4. 살아남으면 Flutter 1~5단계 진행, 못 살아남으면 ESP32 브리지 조기 도입 또는 슬롯 download 패치 검토
+
+이 모든 진행은 [`pi-shell-acp`](https://github.com/junghan0611/pi-shell-acp) 다리를 타고 클로드와 함께 결정했다. 다리를 매일 건너야 다리의 약한 곳이 보인다.
+
 ## 관련 프로젝트
 
 - `homeagent-config` — 집 전체를 다루는 embodied agent 플랫폼
