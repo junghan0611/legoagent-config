@@ -27,12 +27,16 @@
         ]);
 
         # Android SDK (Flutter APK 빌드용) — homeagent-config flake.nix 참조
-        # 라이센스 명시 수락. NDK는 순수 Dart APK이라 불필요.
+        # 라이센스 명시 수락.
+        # NDK 28.2.13676358은 Flutter 3.38.3 기본값. nixpkgs androidSdk는 read-only라
+        # Gradle 자동 설치가 실패하므로 여기서 미리 박는다.
         androidEnv = pkgs.androidenv.override { licenseAccepted = true; };
         androidComposition = androidEnv.composeAndroidPackages {
-          buildToolsVersions = [ "34.0.0" "35.0.0" ];
-          platformVersions = [ "34" "35" ];
-          includeNDK = false;
+          buildToolsVersions = [ "34.0.0" "35.0.0" "36.0.0" ];
+          platformVersions = [ "34" "35" "36" ];
+          includeNDK = true;
+          ndkVersions = [ "28.2.13676358" ];
+          cmakeVersions = [ "3.22.1" ];
           includeEmulator = false;
           includeSystemImages = false;
         };
@@ -98,7 +102,7 @@
           ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
           JAVA_HOME = pkgs.jdk17.home;
           # NixOS aapt2 호환 — Gradle이 Maven 다운로드 대신 nix store aapt2 사용
-          GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${androidSdk}/libexec/android-sdk/build-tools/35.0.0/aapt2";
+          GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${androidSdk}/libexec/android-sdk/build-tools/36.0.0/aapt2";
 
           shellHook = ''
             echo ""
