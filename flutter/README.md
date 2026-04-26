@@ -28,9 +28,13 @@ Flutter가 업로드까지 하려는 순간 Pybricks 전송 프로토콜(WRITE_U
 
 규칙: 새 상태를 가져오는 모든 명령은 명시적인 사용자 액션 뒤에 둔다. 타이머로 주기 호출하지 않는다. (이는 [INVARIANTS.md](../INVARIANTS.md)와 짝이지만 더 위층의 디자인 원칙이라 여기 둔다.)
 
-## 중요 전제 / 필수 검증 (1단계 들어가기 전)
+## 중요 전제 / 필수 검증 — 2026-04-26 통과
 
-> `pybricksdev run ble`는 **RAM 실행 경로**로 보이며, 전원 사이클 후 프로그램이 남지 않을 가능성이 높다.
+> 0.5단계 검증 결과: **통과**. Pybricks Code로 `pybricks/main.py`를 허브 slot 0에 Download한 뒤, 노트북 서버 없이 안드로이드폰 Flutter 앱만으로 BLE 스캔/연결 → `Start slot 0` → `WRITE_STDIN` 제어가 동작했다.
+
+![standalone Flutter legoagent](../docs/standalone-flutter-legoagent.jpg)
+
+`pybricksdev run ble`는 **RAM 실행 경로**로 보이며, 전원 사이클 후 프로그램이 남지 않을 가능성이 높다.
 
 증거 (`pybricksdev` 2.3.2 소스):
 
@@ -43,21 +47,19 @@ Flutter가 업로드까지 하려는 순간 Pybricks 전송 프로토콜(WRITE_U
 - Flutter는 업로드가 아니라 **START_USER_PROGRAM + WRITE_STDIN**만 담당한다.
 - 일회성 실행 도구인 `just upload` (= `pybricksdev run ble`)는 폰 단독 운용에 부적합하다 — 노트북 디버그용으로만 쓴다.
 
-### 0.5단계 — 영구 저장 검증 (Flutter 코드 한 줄 짜기 전)
+### 0.5단계 — 영구 저장 검증
 
-이 검증이 통과해야 Flutter MVP에 의미가 있다. **이걸 먼저 한다.**
+검증은 통과했다. 재현 절차는 다음과 같다.
 
 1. 노트북 크롬에서 `https://code.pybricks.com/` 열기 → 허브 BLE 연결
 2. `pybricks/main.py` 내용을 슬롯 0에 **Download** (Run 아님)
 3. 노트북 BLE 연결 끊기 (Pybricks Code 탭 닫거나 Disconnect)
 4. 허브 전원 OFF → ON
-5. 같은 노트북/다른 폰에서 BLE 다시 붙여 START_USER_PROGRAM 보내기 (Pybricks Code의 ▶ 버튼 또는 nRF Connect 같은 도구로 `0x01 0x00` write)
-6. `pybricks/main.py`가 다시 실행되는지 확인 (예: 부팅 직후 `tlm` 텔레메트리 라인이 stdout으로 나오는지)
+5. 폰 앱 `legoagent` 실행
+6. `Scan` → Hub 선택 → `Start slot 0`
+7. `Beep` / `Light` / `Drive` 버튼으로 반응 확인
 
-| 결과 | 다음 액션 |
-|---|---|
-| ✓ 살아남음 | Flutter MVP 1~5단계 그대로 진행. 본 README 유효. |
-| ✗ 못 살아남음 | 폰 단독 모델 재검토. 옵션: (A) `pybricksdev`에 슬롯 download 패치, (B) Flutter에서 다운로드 프로토콜 구현 (난이도 급상승, 비추), (C) ESP32 브리지를 Stage 2로 조기 도입. |
+성공 판정: 노트북 `just run` 없이 자동차가 움직이면 통과. 2026-04-26 실제 허브/자동차에서 통과했다.
 
 ## 노트북과의 BLE 점유 충돌 (먼저 알아둘 것)
 
@@ -183,7 +185,7 @@ await commandEvent.write([0x01, 0x00], withoutResponse: false); // start slot 0
 // 폴백: 슬롯 미지원이면 [0x01]
 ```
 
-단, 첫 MVP에서는 `START_USER_PROGRAM`까지 무리하지 말고 연결/characteristic 탐색까지만 성공해도 된다.
+초기 MVP에서는 연결/characteristic 탐색까지만 보았고, 이후 `START_USER_PROGRAM` + `WRITE_STDIN`까지 확장해 스탠드얼론 제어를 검증했다.
 
 ## MVP 단계
 

@@ -30,6 +30,21 @@
 
 폰 브라우저에서 `http://<노트북IP>:8888` 로 접속. 현재 검증된 핵심 루프는 Drive 탭의 B/F 모터 주행 제어다. 나머지 Ports / Display / Sound / Light / IMU / Hub 탭은 UI 골격이며 허브 측 구현은 단계적으로 붙인다.
 
+## 스탠드얼론 폰 리모컨 — 검증 완료
+
+![standalone Flutter legoagent — phone directly controls Pybricks Hub](docs/standalone-flutter-legoagent.jpg)
+
+2026-04-26 검증: 노트북 서버 없이 안드로이드폰의 Flutter 앱만으로 SPIKE Prime 허브를 BLE 스캔/연결하고, slot 0에 저장된 `pybricks/main.py`를 실행한 뒤 `WRITE_STDIN` 명령으로 자동차를 제어했다.
+
+운영 흐름:
+
+1. 개발/업데이트 때만 Pybricks Code에서 `pybricks/main.py`를 허브 **slot 0**에 Download
+2. 평소에는 폰 앱 `legoagent` 실행
+3. `Scan` → Hub 선택 → `Start slot 0`
+4. Sound / Light / Display / Drive 버튼으로 직접 제어
+
+즉 노트북은 개발·업데이트 도구이고, 바론이의 실제 놀이 루프는 **폰 앱 ↔ BLE ↔ 허브**로 닫힌다.
+
 ## 목표
 
 1. 바론이가 가지고 노는 레고 자동차/기계가 점점 더 살아 있는 존재처럼 느껴지게 만들기
