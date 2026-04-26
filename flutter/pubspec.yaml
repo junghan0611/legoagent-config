@@ -38,6 +38,9 @@ dependencies:
   # Pybricks Hub BLE — homeagent-config와 동일 버전
   flutter_blue_plus: ^1.35.0
 
+  # Android 12+ BLUETOOTH_SCAN/CONNECT 런타임 권한
+  permission_handler: ^12.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
