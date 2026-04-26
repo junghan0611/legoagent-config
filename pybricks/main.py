@@ -5,7 +5,7 @@ B/F 모터 차체 기준. 서버/UI는 줄 단위 문자열을 보낸다.
 
 from pybricks.hubs import PrimeHub
 from pybricks.pupdevices import Motor
-from pybricks.parameters import Port, Color, Icon
+from pybricks.parameters import Port, Color
 from pybricks.tools import wait
 from usys import stdin, stdout
 from uselect import poll
@@ -73,10 +73,9 @@ def handle(line):
     if parts[0] == "drv" and len(parts) >= 2:
         sub = parts[1]
         if sub == "fwd":
-            # 현재 차체는 전/후진 부호가 반대로 잡힘.
-            drive(-SPEED, -SPEED)
-        elif sub == "rev":
             drive(SPEED, SPEED)
+        elif sub == "rev":
+            drive(-SPEED, -SPEED)
         elif sub == "lft":
             drive(-TURN, TURN)
         elif sub == "rgt":
@@ -124,7 +123,14 @@ def handle(line):
             elif sub == "text" and len(parts) >= 3:
                 hub.display.text(" ".join(parts[2:]))
             elif sub == "icon" and len(parts) >= 3:
-                hub.display.icon(getattr(Icon, parts[2], Icon.HAPPY))
+                # Pybricks 버전별 Icon 상수 차이를 피하려고 검증용 고정 스마일.
+                hub.display.icon([
+                    [0, 100, 0, 100, 0],
+                    [0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0],
+                    [100, 0, 0, 0, 100],
+                    [0, 100, 100, 100, 0],
+                ])
             else:
                 emit("? " + line); return
             emit("ok " + line)
