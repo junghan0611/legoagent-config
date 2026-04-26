@@ -11,6 +11,12 @@
 /// 안전장치:
 ///   - 앱이 background/hidden/inactive로 가면 자동 `drv stp`
 ///   - Drive pad: 누름 = 방향 명령, 뗌 = `drv stp` (deadman)
+///   - dispose 시에도 best-effort `drv stp`
+///
+/// 상태 상호작용 (바론이가 좋아하는 부분):
+///   - notify 구독으로 `main.py`의 emit() stdout 라인을 받는다 (event 0x01)
+///   - 5초마다 `bat\n` 자동 폴링 → `tlm bat v=... i=...` 파싱 → 배터리 표시
+///   - 마지막 허브 라인을 화면에 노출 (오타·에러도 바로 보인다)
 library;
 
 import 'dart:async';
@@ -61,9 +67,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int? _mtu;
   String _lastWrite = '';
 
+  // Hub state — bat 폴링 + emit() 라인 누적
+  int? _batteryMv;
+  int? _batteryMa;
+  DateTime? _batteryAt;
+  String _lastHubLine = '';
+  String _notifyBuf = '';
+
   StreamSubscription<List<ScanResult>>? _scanSub;
   StreamSubscription<BluetoothConnectionState>? _connSub;
   StreamSubscription<bool>? _scanningSub;
+  StreamSubscription<List<int>>? _notifySub;
+  Timer? _batteryTimer;
 
   @override
   void initState() {
@@ -76,10 +91,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    // 화면이 사라지기 직전 best-effort stop — 앱 강제 종료/네비게이션 모두 커버
+    _emergencyStop();
     WidgetsBinding.instance.removeObserver(this);
     _scanSub?.cancel();
     _connSub?.cancel();
     _scanningSub?.cancel();
+    _notifySub?.cancel();
+    _batteryTimer?.cancel();
     super.dispose();
   }
 
@@ -177,21 +196,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
       _connSub = device.connectionState.listen((s) {
         if (s == BluetoothConnectionState.disconnected && mounted) {
+          _stopHubTelemetry();
           setState(() {
             _status = 'disconnected';
             _commandEvent = null;
             _connectedDevice = null;
             _mtu = null;
             _lastWrite = '';
+            _batteryMv = null;
+            _batteryMa = null;
+            _batteryAt = null;
+            _lastHubLine = '';
+            _notifyBuf = '';
           });
         }
       });
+
+      // notify 구독: Pybricks event 0x01 = WRITE_STDOUT (program emit)
+      await char.setNotifyValue(true);
+      _notifySub = char.lastValueStream.listen(_onNotify);
+
       if (!mounted) return;
       setState(() {
         _connectedDevice = device;
         _commandEvent = char;
         _status = 'READY — Start slot 0 → Drive';
       });
+
+      // 5초마다 배터리 자동 폴링. main.py의 'bat' 명령 — emit("tlm bat v=...")
+      _batteryTimer = Timer.periodic(
+        const Duration(seconds: 5),
+        (_) => _writeLine('bat'),
+      );
+      _writeLine('bat'); // 첫 값을 즉시
     } catch (e) {
       if (mounted) setState(() => _status = 'connect error: $e');
       try {
@@ -202,11 +239,59 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _disconnect() async {
     await _emergencyStop();
+    _stopHubTelemetry();
     final d = _connectedDevice;
     if (d == null) return;
     try {
       await d.disconnect();
     } catch (_) {}
+  }
+
+  void _stopHubTelemetry() {
+    _batteryTimer?.cancel();
+    _batteryTimer = null;
+    _notifySub?.cancel();
+    _notifySub = null;
+  }
+
+  // ---- Notify (hub → app) ----
+
+  void _onNotify(List<int> bytes) {
+    if (bytes.isEmpty) return;
+    // Pybricks event byte: 0x00=STATUS_REPORT, 0x01=WRITE_STDOUT.
+    // 우리는 stdout만 읽는다.
+    if (bytes.first != 0x01) return;
+    final chunk = utf8.decode(bytes.sublist(1), allowMalformed: true);
+    _notifyBuf += chunk;
+    while (true) {
+      final nl = _notifyBuf.indexOf('\n');
+      if (nl < 0) break;
+      final raw = _notifyBuf.substring(0, nl);
+      _notifyBuf = _notifyBuf.substring(nl + 1);
+      final line = raw.replaceAll('\r', '').trim();
+      if (line.isEmpty) continue;
+      _onHubLine(line);
+    }
+  }
+
+  void _onHubLine(String line) {
+    if (!mounted) return;
+    if (line.startsWith('tlm bat ')) {
+      // "tlm bat v=7800 i=200" — Pybricks PrimeHub.battery: voltage(mV), current(mA)
+      int? mv;
+      int? ma;
+      for (final tok in line.split(' ')) {
+        if (tok.startsWith('v=')) mv = int.tryParse(tok.substring(2));
+        if (tok.startsWith('i=')) ma = int.tryParse(tok.substring(2));
+      }
+      setState(() {
+        _batteryMv = mv;
+        _batteryMa = ma;
+        _batteryAt = DateTime.now();
+      });
+      return;
+    }
+    setState(() => _lastHubLine = line);
   }
 
   String _displayName(BluetoothDevice d) =>
@@ -315,6 +400,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _connectedCard(ThemeData theme) {
+    final age = _batteryAt == null
+        ? ''
+        : '   (${DateTime.now().difference(_batteryAt!).inSeconds}s)';
+    final batLine = _batteryMv == null
+        ? '🔋 Hub battery: 측정 중…'
+        : '🔋 ${(_batteryMv! / 1000).toStringAsFixed(2)} V'
+            '${_batteryMa == null ? '' : '   ⚡ $_batteryMa mA'}$age';
     return Card(
       color: theme.colorScheme.primaryContainer,
       child: Padding(
@@ -326,6 +418,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               'Connected: ${_displayName(_connectedDevice!)}  (MTU=$_mtu)',
               style: theme.textTheme.titleSmall,
             ),
+            const SizedBox(height: 4),
+            Text(batLine, style: theme.textTheme.titleSmall),
+            if (_lastHubLine.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  '↩ $_lastHubLine',
+                  style: theme.textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             const SizedBox(height: 4),
             Text(
               '⚠ main.py가 Pybricks Code로 slot 0에 Download되어 있어야 동작합니다.\n'
@@ -369,20 +473,55 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _sectionLabel(theme, 'Quick'),
+          _sectionLabel(theme, 'Program'),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
               _quickButton('Start default', _startDefault),
               _quickButton('Start slot 0', _startSlot0),
-              _quickButton('Beep', () => _writeLine('snd beep 660 150')),
-              _quickButton('Light red', () => _writeLine('lit 255 0 0')),
+              _quickButton('Hub OK', () => _writeLine('hub info')),
+              _quickButton('Battery now', () => _writeLine('bat')),
               _quickButton(
                 'Stop',
                 () => _writeLine('drv stp'),
                 emphasis: true,
               ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _sectionLabel(theme, 'Light'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _quickButton('Red', () => _writeLine('lit 255 0 0')),
+              _quickButton('Green', () => _writeLine('lit 0 255 0')),
+              _quickButton('Blue', () => _writeLine('lit 0 0 255')),
+              _quickButton('Off', () => _writeLine('lit 0 0 0')),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _sectionLabel(theme, 'Sound'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _quickButton('Beep', () => _writeLine('snd beep 660 150')),
+              _quickButton('C5', () => _writeLine('snd note C5 200')),
+              _quickButton('E5', () => _writeLine('snd note E5 200')),
+              _quickButton('G5', () => _writeLine('snd note G5 200')),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _sectionLabel(theme, 'Display'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _quickButton('HI', () => _writeLine('dsp text HI')),
+              _quickButton('Smile', () => _writeLine('dsp icon HAPPY')),
+              _quickButton('Clear', () => _writeLine('dsp clear')),
             ],
           ),
           const SizedBox(height: 20),
