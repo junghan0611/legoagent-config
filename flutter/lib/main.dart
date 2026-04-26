@@ -15,7 +15,8 @@
 ///
 /// 상태 상호작용 (바론이가 좋아하는 부분):
 ///   - notify 구독으로 `main.py`의 emit() stdout 라인을 받는다 (event 0x01)
-///   - 5초마다 `bat\n` 자동 폴링 → `tlm bat v=... i=...` 파싱 → 배터리 표시
+///   - 배터리는 **자동 폴링 없음** — Refresh 버튼을 누르면 'bat' 한 번 보낸다
+///     (자동화는 어른의 리듬이고, 아이는 누르고 응답이 오는 흐름에 감동한다)
 ///   - 마지막 허브 라인을 화면에 노출 (오타·에러도 바로 보인다)
 library;
 
@@ -78,7 +79,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StreamSubscription<BluetoothConnectionState>? _connSub;
   StreamSubscription<bool>? _scanningSub;
   StreamSubscription<List<int>>? _notifySub;
-  Timer? _batteryTimer;
 
   @override
   void initState() {
@@ -98,7 +98,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _connSub?.cancel();
     _scanningSub?.cancel();
     _notifySub?.cancel();
-    _batteryTimer?.cancel();
     super.dispose();
   }
 
@@ -220,15 +219,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _connectedDevice = device;
         _commandEvent = char;
-        _status = 'READY — Start slot 0 → Drive';
+        _status = 'READY — Start slot 0 → 버튼을 누르면 허브가 응답합니다';
       });
-
-      // 5초마다 배터리 자동 폴링. main.py의 'bat' 명령 — emit("tlm bat v=...")
-      _batteryTimer = Timer.periodic(
-        const Duration(seconds: 5),
-        (_) => _writeLine('bat'),
-      );
-      _writeLine('bat'); // 첫 값을 즉시
+      // 배터리/상태는 자동 폴링하지 않는다. 아이가 Refresh를 누르면 응답이 온다.
     } catch (e) {
       if (mounted) setState(() => _status = 'connect error: $e');
       try {
@@ -248,8 +241,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _stopHubTelemetry() {
-    _batteryTimer?.cancel();
-    _batteryTimer = null;
     _notifySub?.cancel();
     _notifySub = null;
   }
@@ -402,9 +393,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _connectedCard(ThemeData theme) {
     final age = _batteryAt == null
         ? ''
-        : '   (${DateTime.now().difference(_batteryAt!).inSeconds}s)';
+        : '   (${DateTime.now().difference(_batteryAt!).inSeconds}s 전)';
     final batLine = _batteryMv == null
-        ? '🔋 Hub battery: 측정 중…'
+        ? '🔋 Battery: 🔄 Refresh를 누르면 허브가 알려줍니다'
         : '🔋 ${(_batteryMv! / 1000).toStringAsFixed(2)} V'
             '${_batteryMa == null ? '' : '   ⚡ $_batteryMa mA'}$age';
     return Card(
@@ -481,7 +472,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               _quickButton('Start default', _startDefault),
               _quickButton('Start slot 0', _startSlot0),
               _quickButton('Hub OK', () => _writeLine('hub info')),
-              _quickButton('Battery now', () => _writeLine('bat')),
+              _quickButton('🔄 Refresh battery', () => _writeLine('bat')),
               _quickButton(
                 'Stop',
                 () => _writeLine('drv stp'),
