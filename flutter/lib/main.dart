@@ -301,8 +301,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _startDefault() => _writeCommand([0x01], 'START default');
-
   Future<void> _startSlot0() => _writeCommand([0x01, 0x00], 'START slot 0');
 
   Future<void> _writeLine(String line) =>
@@ -325,13 +323,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    return _connectedDevice == null
+        ? _buildScanScaffold(context)
+        : _buildConnectedScaffold(context);
+  }
+
+  // 연결 전: Scan / 결과 목록만. 사용자에게 보여줄 게 없을 때 군더더기를 줄인다.
+  Widget _buildScanScaffold(BuildContext context) {
     final theme = Theme.of(context);
-    final connected = _connectedDevice != null;
     return Scaffold(
       appBar: AppBar(title: const Text('legoagent — Pybricks BLE')),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -340,51 +344,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 style: theme.textTheme.titleMedium,
                 textAlign: TextAlign.center,
               ),
-              if (_lastWrite.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    _lastWrite,
-                    style: theme.textTheme.bodySmall,
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              const SizedBox(height: 8),
-              if (connected) _connectedCard(theme),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed:
-                          (!connected && !_scanning) ? _startScan : null,
-                      icon: _scanning
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.bluetooth_searching),
-                      label: Text(_scanning ? 'Scanning…' : 'Scan'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: connected ? _disconnect : null,
-                      icon: const Icon(Icons.link_off),
-                      label: const Text('Disconnect'),
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: !_scanning ? _startScan : null,
+                icon: _scanning
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.bluetooth_searching),
+                label: Text(_scanning ? 'Scanning…' : 'Scan'),
               ),
               const SizedBox(height: 12),
-              Expanded(
-                child: connected
-                    ? _controlsView(theme)
-                    : _scanResultsView(theme),
-              ),
+              Expanded(child: _scanResultsView(theme)),
             ],
           ),
         ),
@@ -392,49 +365,145 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _connectedCard(ThemeData theme) {
-    final age = _batteryAt == null
-        ? ''
-        : '   (${DateTime.now().difference(_batteryAt!).inSeconds}s 전)';
-    final batLine = _batteryMv == null
-        ? '🔋 Battery: 🔄 Refresh를 누르면 허브가 알려줍니다'
-        : '🔋 ${(_batteryMv! / 1000).toStringAsFixed(2)} V'
-            '${_batteryMa == null ? '' : '   ⚡ $_batteryMa mA'}$age';
-    return Card(
-      color: theme.colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Connected: ${_displayName(_connectedDevice!)}  (MTU=$_mtu)',
-              style: theme.textTheme.titleSmall,
-            ),
-            const SizedBox(height: 4),
-            Text(batLine, style: theme.textTheme.titleSmall),
-            if (_lastHubLine.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
+  // 연결 후: AppBar에는 STOP / 설정 두 아이콘만. 본문은 탭 가득.
+  // 디바이스 이름·MTU·배터리·last line 같은 메타는 설정 시트로 숨긴다.
+  Widget _buildConnectedScaffold(BuildContext context) {
+    final theme = Theme.of(context);
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Row(
+            children: [
+              const Icon(Icons.bluetooth_connected,
+                  color: Colors.lightGreenAccent),
+              const SizedBox(width: 8),
+              Expanded(
                 child: Text(
-                  '↩ $_lastHubLine',
-                  style: theme.textTheme.bodySmall,
-                  maxLines: 1,
+                  _displayName(_connectedDevice!),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-            const SizedBox(height: 4),
-            Text(
-              '⚠ main.py가 Pybricks Code로 slot 0에 Download되어 있어야 동작합니다.\n'
-              '   0.5 검증 게이트 전 — 전원 사이클 후 잔존 여부 미검증.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onPrimaryContainer
-                    .withValues(alpha: 0.85),
-              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.stop_circle,
+                  color: Colors.redAccent, size: 30),
+              tooltip: 'STOP all motors',
+              onPressed: _emergencyStop,
+            ),
+            IconButton(
+              icon: const Icon(Icons.tune),
+              tooltip: 'Status / connection',
+              onPressed: () => _openSettingsSheet(context),
             ),
           ],
+          bottom: const TabBar(
+            tabs: [
+              Tab(icon: Icon(Icons.directions_car), text: 'Drive'),
+              Tab(icon: Icon(Icons.elevator), text: 'Elevator'),
+              Tab(icon: Icon(Icons.auto_fix_high), text: 'FX'),
+            ],
+          ),
+        ),
+        body: SafeArea(
+          child: TabBarView(
+            children: [
+              _driveTab(theme),
+              _elevatorTab(theme),
+              _fxTab(theme),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  void _openSettingsSheet(BuildContext rootCtx) {
+    showModalBottomSheet(
+      context: rootCtx,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetCtx) {
+        // sheet은 독립 위젯 트리라 부모 setState가 닿지 않는다.
+        // Battery refresh 직후 한 번 setSheetState로 새 값을 끌어온다.
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final theme = Theme.of(ctx);
+            final age = _batteryAt == null
+                ? ''
+                : '   (${DateTime.now().difference(_batteryAt!).inSeconds}s 전)';
+            final batLine = _batteryMv == null
+                ? '🔋 Battery: 🔄 Refresh를 누르면 허브가 알려줍니다'
+                : '🔋 ${(_batteryMv! / 1000).toStringAsFixed(2)} V'
+                    '${_batteryMa == null ? '' : '   ⚡ $_batteryMa mA'}$age';
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Connected: ${_displayName(_connectedDevice!)}  (MTU=$_mtu)',
+                    style: theme.textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(batLine, style: theme.textTheme.titleSmall),
+                  if (_lastHubLine.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '↩ $_lastHubLine',
+                      style: theme.textTheme.bodySmall,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (_lastWrite.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(_lastWrite, style: theme.textTheme.bodySmall),
+                  ],
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      _quickButton('Start slot 0', _startSlot0),
+                      _quickButton('Hub OK', () => _writeLine('hub info')),
+                      _quickButton('🔄 Battery', () async {
+                        await _writeLine('bat');
+                        // emit가 비동기로 도착해 _batteryMv 가 갱신된 직후 sheet도 다시 그린다.
+                        await Future<void>.delayed(
+                            const Duration(milliseconds: 300));
+                        setSheetState(() {});
+                      }),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.link_off),
+                    label: const Text('Disconnect'),
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      _disconnect();
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '⚠ main.py가 Pybricks Code로 slot 0에 Download되어 있어야 동작합니다.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -461,48 +530,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _controlsView(ThemeData theme) {
-    // 공통 헤더(시작/배터리/STOP) 위에 탭 두 개 — Drive / Elevator.
-    // STOP은 차/엘리베이터 모두 멈추는 _emergencyStop 으로 묶어 안전 우선.
-    return DefaultTabController(
-      length: 2,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _quickButton('Start slot 0', _startSlot0),
-              _quickButton('Hub OK', () => _writeLine('hub info')),
-              _quickButton('🔄 Battery', () => _writeLine('bat')),
-              _quickButton('STOP all', _emergencyStop, emphasis: true),
-            ],
-          ),
-          const SizedBox(height: 8),
-          TabBar(
-            labelColor: theme.colorScheme.primary,
-            tabs: const [
-              Tab(icon: Icon(Icons.directions_car), text: '🚗 Drive'),
-              Tab(icon: Icon(Icons.elevator), text: '🛗 Elevator'),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                _driveTab(theme),
-                _elevatorTab(theme),
-              ],
+  Widget _driveTab(ThemeData theme) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '누름 = 진행, 뗌 = 정지',
+              style: theme.textTheme.titleSmall,
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            _drivePad(),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _driveTab(ThemeData theme) {
+  Widget _fxTab(ThemeData theme) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.only(top: 12, bottom: 24),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -517,7 +566,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               _quickButton('Off', () => _writeLine('lit 0 0 0')),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           _sectionLabel(theme, 'Sound'),
           Wrap(
             spacing: 8,
@@ -529,7 +578,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               _quickButton('G5', () => _writeLine('snd note G5 200')),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           _sectionLabel(theme, 'Display'),
           Wrap(
             spacing: 8,
@@ -540,10 +589,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               _quickButton('Clear', () => _writeLine('dsp clear')),
             ],
           ),
-          const SizedBox(height: 20),
-          _sectionLabel(theme, 'Drive (누름 = 진행, 뗌 = 정지)'),
-          const SizedBox(height: 8),
-          _drivePad(),
         ],
       ),
     );
@@ -552,50 +597,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _elevatorTab(ThemeData theme) {
     // 데드맨 패턴: 누르면 모터가 돌고, 떼면 brake. 한계 스위치 없으니 아이가
     // 쳐다보면서 조작하는 게 핵심이다. 자동 정지/프리셋은 다음 버전.
-    return SingleChildScrollView(
-      padding: const EdgeInsets.only(top: 12, bottom: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _sectionLabel(theme, 'Elevator (E 모터, 누르면 움직이고 떼면 멈춘다)'),
-          const SizedBox(height: 12),
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _LiftButton(
-                  icon: Icons.keyboard_double_arrow_up,
-                  label: 'UP',
-                  pressLine: 'lift up',
-                  color: Colors.green.shade600,
-                  owner: this,
-                ),
-                const SizedBox(height: 12),
-                _LiftStop(owner: this),
-                const SizedBox(height: 12),
-                _LiftButton(
-                  icon: Icons.keyboard_double_arrow_down,
-                  label: 'DOWN',
-                  pressLine: 'lift dn',
-                  color: Colors.blue.shade600,
-                  owner: this,
-                ),
-              ],
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '누름 = 움직임, 뗌 = 정지',
+              style: theme.textTheme.titleSmall,
             ),
-          ),
-          const SizedBox(height: 24),
-          Card(
-            color: theme.colorScheme.surfaceContainerHighest,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(
-                'TIP: 위/아래가 거꾸로 움직이면 pybricks/main.py의 LIFT_DIR 을 -1로 바꿔.\n'
-                '한계 스위치가 없어 모터가 끝까지 가면 줄이 풀리거나 끊긴다. 항상 보면서.',
-                style: theme.textTheme.bodySmall,
-              ),
+            const SizedBox(height: 16),
+            _LiftButton(
+              icon: Icons.keyboard_double_arrow_up,
+              label: 'UP',
+              pressLine: 'lift up',
+              color: Colors.green.shade600,
+              owner: this,
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            _LiftStop(owner: this),
+            const SizedBox(height: 12),
+            _LiftButton(
+              icon: Icons.keyboard_double_arrow_down,
+              label: 'DOWN',
+              pressLine: 'lift dn',
+              color: Colors.blue.shade600,
+              owner: this,
+            ),
+          ],
+        ),
       ),
     );
   }
