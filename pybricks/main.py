@@ -23,7 +23,7 @@ wait(300)
 hub.light.off()
 
 motors = {}
-for name, port in (("B", Port.B), ("F", Port.F)):
+for name, port in (("B", Port.B), ("F", Port.F), ("E", Port.E)):
     try:
         motors[name] = Motor(port)
         emit("mot " + name + " ok")
@@ -33,10 +33,13 @@ for name, port in (("B", Port.B), ("F", Port.F)):
 
 LEFT = "B"
 RIGHT = "F"
+LIFT = "E"
 LEFT_DIR = -1
 RIGHT_DIR = 1
-SPEED = 500
-TURN = 320
+LIFT_DIR = 1   # 위/아래 방향이 반대로 움직이면 -1로 뒤집는다 (바론이가 한 번 눌러보고 결정)
+SPEED = 800   # 직진 속도 (deg/s) — 500은 느리다고 했고, 더 빠르면 컨트롤이 어려워 800
+TURN = 500    # 제자리 회전 — 직진의 약 60%
+LIFT_SPEED = 400
 
 
 def motor_run(name, speed):
@@ -85,6 +88,25 @@ def handle(line):
         else:
             emit("? " + line); return
         emit("ok " + line)
+        return
+
+    if parts[0] == "lift" and len(parts) >= 2:
+        m = motors.get(LIFT)
+        if not m:
+            emit("err lift missing"); return
+        sub = parts[1]
+        try:
+            if sub == "up":
+                m.run(LIFT_SPEED * LIFT_DIR)
+            elif sub == "dn":
+                m.run(-LIFT_SPEED * LIFT_DIR)
+            elif sub == "stp":
+                m.brake()
+            else:
+                emit("? " + line); return
+            emit("ok " + line)
+        except Exception as e:
+            emit("err " + str(e))
         return
 
     if parts[0] == "mot" and len(parts) >= 3:

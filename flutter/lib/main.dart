@@ -311,9 +311,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _emergencyStop() async {
     final char = _commandEvent;
     if (char == null) return;
+    // 차/엘리베이터 모터를 한 write 안에서 같이 멈춘다 — 폰이 background로 가도
+    // 두 모터 다 잡힌다. \n 으로 분리되면 main.py 파서가 줄 단위로 처리한다.
     try {
       await char.write(
-        [0x06, ...utf8.encode('drv stp\n')],
+        [0x06, ...utf8.encode('drv stp\nlift stp\n')],
         withoutResponse: false,
       );
     } catch (_) {}
@@ -460,27 +462,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _controlsView(ThemeData theme) {
-    return SingleChildScrollView(
+    // 공통 헤더(시작/배터리/STOP) 위에 탭 두 개 — Drive / Elevator.
+    // STOP은 차/엘리베이터 모두 멈추는 _emergencyStop 으로 묶어 안전 우선.
+    return DefaultTabController(
+      length: 2,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _sectionLabel(theme, 'Program'),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              _quickButton('Start default', _startDefault),
               _quickButton('Start slot 0', _startSlot0),
               _quickButton('Hub OK', () => _writeLine('hub info')),
-              _quickButton('🔄 Refresh battery', () => _writeLine('bat')),
-              _quickButton(
-                'Stop',
-                () => _writeLine('drv stp'),
-                emphasis: true,
-              ),
+              _quickButton('🔄 Battery', () => _writeLine('bat')),
+              _quickButton('STOP all', _emergencyStop, emphasis: true),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
+          TabBar(
+            labelColor: theme.colorScheme.primary,
+            tabs: const [
+              Tab(icon: Icon(Icons.directions_car), text: '🚗 Drive'),
+              Tab(icon: Icon(Icons.elevator), text: '🛗 Elevator'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _driveTab(theme),
+                _elevatorTab(theme),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _driveTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(top: 12, bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           _sectionLabel(theme, 'Light'),
           Wrap(
             spacing: 8,
@@ -519,6 +544,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _sectionLabel(theme, 'Drive (누름 = 진행, 뗌 = 정지)'),
           const SizedBox(height: 8),
           _drivePad(),
+        ],
+      ),
+    );
+  }
+
+  Widget _elevatorTab(ThemeData theme) {
+    // 데드맨 패턴: 누르면 모터가 돌고, 떼면 brake. 한계 스위치 없으니 아이가
+    // 쳐다보면서 조작하는 게 핵심이다. 자동 정지/프리셋은 다음 버전.
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(top: 12, bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _sectionLabel(theme, 'Elevator (E 모터, 누르면 움직이고 떼면 멈춘다)'),
+          const SizedBox(height: 12),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _LiftButton(
+                  icon: Icons.keyboard_double_arrow_up,
+                  label: 'UP',
+                  pressLine: 'lift up',
+                  color: Colors.green.shade600,
+                  owner: this,
+                ),
+                const SizedBox(height: 12),
+                _LiftStop(owner: this),
+                const SizedBox(height: 12),
+                _LiftButton(
+                  icon: Icons.keyboard_double_arrow_down,
+                  label: 'DOWN',
+                  pressLine: 'lift dn',
+                  color: Colors.blue.shade600,
+                  owner: this,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          Card(
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                'TIP: 위/아래가 거꾸로 움직이면 pybricks/main.py의 LIFT_DIR 을 -1로 바꿔.\n'
+                '한계 스위치가 없어 모터가 끝까지 가면 줄이 풀리거나 끊긴다. 항상 보면서.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -644,6 +720,88 @@ class _CenterStop extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
         ),
         child: const Icon(Icons.stop, size: 40, color: Colors.white),
+      ),
+    );
+  }
+}
+
+class _LiftButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String pressLine;
+  final Color color;
+  final _HomeScreenState owner;
+  const _LiftButton({
+    required this.icon,
+    required this.label,
+    required this.pressLine,
+    required this.color,
+    required this.owner,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => owner._writeLine(pressLine),
+      onTapUp: (_) => owner._writeLine('lift stp'),
+      onTapCancel: () => owner._writeLine('lift stp'),
+      child: Container(
+        width: 220,
+        height: 110,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 48, color: Colors.white),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LiftStop extends StatelessWidget {
+  final _HomeScreenState owner;
+  const _LiftStop({required this.owner});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => owner._writeLine('lift stp'),
+      child: Container(
+        width: 220,
+        height: 80,
+        decoration: BoxDecoration(
+          color: Colors.red.shade600,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.stop, size: 36, color: Colors.white),
+            SizedBox(width: 8),
+            Text(
+              'STOP',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
