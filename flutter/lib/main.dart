@@ -31,6 +31,15 @@ import 'package:permission_handler/permission_handler.dart';
 const pybricksServiceUuid = 'c5f50001-8280-46da-89f4-6d8051e4aeef';
 const pybricksCommandEventUuid = 'c5f50002-8280-46da-89f4-6d8051e4aeef';
 
+// 테마 모드 — 폰 디스플레이가 오래돼 흰 바탕이 잘 안 보인다.
+// 기본 다크로 켜고, 설정/스캔화면 토글로 라이트 전환 가능.
+final themeNotifier = ValueNotifier<ThemeMode>(ThemeMode.dark);
+
+void _toggleTheme() {
+  themeNotifier.value =
+      themeNotifier.value == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+}
+
 void main() {
   runApp(const LegoAgentApp());
 }
@@ -40,14 +49,26 @@ class LegoAgentApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'legoagent',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: Colors.deepPurple,
-        useMaterial3: true,
-      ),
-      home: const HomeScreen(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, mode, _) {
+        return MaterialApp(
+          title: 'legoagent',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            colorSchemeSeed: Colors.deepPurple,
+            useMaterial3: true,
+            brightness: Brightness.light,
+          ),
+          darkTheme: ThemeData(
+            colorSchemeSeed: Colors.deepPurple,
+            useMaterial3: true,
+            brightness: Brightness.dark,
+          ),
+          themeMode: mode,
+          home: const HomeScreen(),
+        );
+      },
     );
   }
 }
@@ -332,7 +353,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildScanScaffold(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('legoagent — Pybricks BLE')),
+      appBar: AppBar(
+        title: const Text('legoagent — Pybricks BLE'),
+        actions: [
+          IconButton(
+            icon: Icon(themeNotifier.value == ThemeMode.dark
+                ? Icons.light_mode
+                : Icons.dark_mode),
+            tooltip: '테마 전환 (다크/라이트)',
+            onPressed: _toggleTheme,
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -485,6 +517,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ],
                   ),
                   const SizedBox(height: 12),
+                  const Divider(),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: Icon(themeNotifier.value == ThemeMode.dark
+                        ? Icons.dark_mode
+                        : Icons.light_mode),
+                    title: const Text('다크 모드'),
+                    subtitle: const Text('오래된 화면용 — 흰 바탕 줄이기'),
+                    value: themeNotifier.value == ThemeMode.dark,
+                    onChanged: (_) {
+                      _toggleTheme();
+                      setSheetState(() {});
+                    },
+                  ),
+                  const SizedBox(height: 4),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.link_off),
                     label: const Text('Disconnect'),
