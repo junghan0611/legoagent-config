@@ -1,6 +1,6 @@
 """
 legoagent — PrimeHub stdin 라인 명령 처리기.
-B/F 모터 차체 기준. 서버/UI는 줄 단위 문자열을 보낸다.
+B/F 모터 차체 기준 + E 엘리베이터 + A 보조 모터. 서버/UI는 줄 단위 문자열을 보낸다.
 """
 
 from pybricks.hubs import PrimeHub
@@ -23,7 +23,7 @@ wait(300)
 hub.light.off()
 
 motors = {}
-for name, port in (("B", Port.B), ("F", Port.F), ("E", Port.E)):
+for name, port in (("B", Port.B), ("F", Port.F), ("E", Port.E), ("A", Port.A)):
     try:
         motors[name] = Motor(port)
         emit("mot " + name + " ok")
@@ -34,12 +34,15 @@ for name, port in (("B", Port.B), ("F", Port.F), ("E", Port.E)):
 LEFT = "B"
 RIGHT = "F"
 LIFT = "E"
+AUX = "A"      # A에 새로 단 별도 모터 — 주행 좌우가 아니라 자기만의 좌우
 LEFT_DIR = -1
 RIGHT_DIR = 1
 LIFT_DIR = 1   # 위/아래 방향이 반대로 움직이면 -1로 뒤집는다 (바론이가 한 번 눌러보고 결정)
+AUX_DIR = 1    # ◀/▶ 가 반대로 돌면 -1로 뒤집는다
 SPEED = 800   # 직진 속도 (deg/s) — 500은 느리다고 했고, 더 빠르면 컨트롤이 어려워 800
 TURN = 500    # 제자리 회전 — 직진의 약 60%
 LIFT_SPEED = 400
+AUX_SPEED = 400
 
 
 def motor_run(name, speed):
@@ -100,6 +103,25 @@ def handle(line):
                 m.run(LIFT_SPEED * LIFT_DIR)
             elif sub == "dn":
                 m.run(-LIFT_SPEED * LIFT_DIR)
+            elif sub == "stp":
+                m.brake()
+            else:
+                emit("? " + line); return
+            emit("ok " + line)
+        except Exception as e:
+            emit("err " + str(e))
+        return
+
+    if parts[0] == "aux" and len(parts) >= 2:
+        m = motors.get(AUX)
+        if not m:
+            emit("err aux missing"); return
+        sub = parts[1]
+        try:
+            if sub == "lft":
+                m.run(-AUX_SPEED * AUX_DIR)
+            elif sub == "rgt":
+                m.run(AUX_SPEED * AUX_DIR)
             elif sub == "stp":
                 m.brake()
             else:

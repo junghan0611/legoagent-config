@@ -330,11 +330,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _emergencyStop() async {
     final char = _commandEvent;
     if (char == null) return;
-    // 차/엘리베이터 모터를 한 write 안에서 같이 멈춘다 — 폰이 background로 가도
-    // 두 모터 다 잡힌다. \n 으로 분리되면 main.py 파서가 줄 단위로 처리한다.
+    // 차/엘리베이터/A 모터를 한 write 안에서 같이 멈춘다 — 폰이 background로 가도
+    // 모든 모터가 잡힌다. \n 으로 분리되면 main.py 파서가 줄 단위로 처리한다.
     try {
       await char.write(
-        [0x06, ...utf8.encode('drv stp\nlift stp\n')],
+        [0x06, ...utf8.encode('drv stp\nlift stp\naux stp\n')],
         withoutResponse: false,
       );
     } catch (_) {}
@@ -589,6 +589,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               style: theme.textTheme.titleSmall,
             ),
             const SizedBox(height: 16),
+            _auxRow(theme),
+            const SizedBox(height: 20),
             _drivePad(),
           ],
         ),
@@ -705,6 +707,42 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  // A 포트 보조 모터 — 주행 좌우와 따로 노는 자기만의 좌우. 방향표와 헷갈리지
+  // 않게 색(tertiary)과 아이콘(겹화살표)을 다르게 둔다. 데드맨은 `aux stp`.
+  Widget _auxRow(ThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('A 모터', style: theme.textTheme.labelLarge),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _PadCell(
+              child: _DirButton(
+                Icons.keyboard_double_arrow_left,
+                'aux lft',
+                this,
+                stopLine: 'aux stp',
+                tertiary: true,
+              ),
+            ),
+            const SizedBox(width: 88),
+            _PadCell(
+              child: _DirButton(
+                Icons.keyboard_double_arrow_right,
+                'aux rgt',
+                this,
+                stopLine: 'aux stp',
+                tertiary: true,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _drivePad() {
     return Center(
       child: Column(
@@ -758,25 +796,37 @@ class _DirButton extends StatelessWidget {
   final IconData icon;
   final String pressLine;
   final _HomeScreenState owner;
-  const _DirButton(this.icon, this.pressLine, this.owner);
+  final String stopLine;
+  final bool tertiary;
+  const _DirButton(
+    this.icon,
+    this.pressLine,
+    this.owner, {
+    this.stopLine = 'drv stp',
+    this.tertiary = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
     return GestureDetector(
       onTapDown: (_) => owner._writeLine(pressLine),
-      onTapUp: (_) => owner._writeLine('drv stp'),
-      onTapCancel: () => owner._writeLine('drv stp'),
+      onTapUp: (_) => owner._writeLine(stopLine),
+      onTapCancel: () => owner._writeLine(stopLine),
       child: Container(
         margin: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: theme.colorScheme.secondaryContainer,
+          color: tertiary
+              ? scheme.tertiaryContainer
+              : scheme.secondaryContainer,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Icon(
           icon,
           size: 40,
-          color: theme.colorScheme.onSecondaryContainer,
+          color: tertiary
+              ? scheme.onTertiaryContainer
+              : scheme.onSecondaryContainer,
         ),
       ),
     );
