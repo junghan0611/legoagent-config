@@ -1,10 +1,10 @@
 """
 legoagent — PrimeHub stdin 라인 명령 처리기.
-B/F 모터 차체 기준 + E 엘리베이터 + A 보조 모터. 서버/UI는 줄 단위 문자열을 보낸다.
+B/F 주행 모터, A 보조 모터, C 색 센서, E 거리 센서.
 """
 
 from pybricks.hubs import PrimeHub
-from pybricks.pupdevices import Motor
+from pybricks.pupdevices import Motor, ColorSensor, UltrasonicSensor
 from pybricks.parameters import Port, Color
 from pybricks.tools import wait
 from usys import stdin, stdout
@@ -23,7 +23,7 @@ wait(300)
 hub.light.off()
 
 motors = {}
-for name, port in (("B", Port.B), ("F", Port.F), ("E", Port.E), ("A", Port.A)):
+for name, port in (("B", Port.B), ("F", Port.F), ("A", Port.A)):
     try:
         motors[name] = Motor(port)
         emit("mot " + name + " ok")
@@ -31,17 +31,24 @@ for name, port in (("B", Port.B), ("F", Port.F), ("E", Port.E), ("A", Port.A)):
         motors[name] = None
         emit("mot " + name + " err " + str(e))
 
+sensors = {}
+for name, sensor_type, port in (("color", ColorSensor, Port.C),
+                                ("distance", UltrasonicSensor, Port.E)):
+    try:
+        sensors[name] = sensor_type(port)
+        emit("sensor " + name + " ok")
+    except Exception as e:
+        sensors[name] = None
+        emit("sensor " + name + " err " + str(e))
+
 LEFT = "B"
 RIGHT = "F"
-LIFT = "E"
 AUX = "A"      # A에 새로 단 별도 모터 — 주행 좌우가 아니라 자기만의 좌우
 LEFT_DIR = -1
 RIGHT_DIR = 1
-LIFT_DIR = 1   # 위/아래 방향이 반대로 움직이면 -1로 뒤집는다 (바론이가 한 번 눌러보고 결정)
 AUX_DIR = 1    # ◀/▶ 가 반대로 돌면 -1로 뒤집는다
 SPEED = 800   # 직진 속도 (deg/s) — 500은 느리다고 했고, 더 빠르면 컨트롤이 어려워 800
 TURN = 500    # 제자리 회전 — 직진의 약 60%
-LIFT_SPEED = 400
 AUX_SPEED = 400
 
 
@@ -71,6 +78,17 @@ def brake_all():
     motor_brake(RIGHT)
 
 
+def brake_for_play():
+    # Try every present motor even if one fails; never start playback on failure.
+    failed = False
+    for name in (LEFT, RIGHT, AUX):
+        try:
+            motor_brake(name)
+        except Exception:
+            failed = True
+    return not failed
+
+
 def handle(line):
     parts = line.strip().split()
     if not parts:
@@ -93,23 +111,8 @@ def handle(line):
         emit("ok " + line)
         return
 
-    if parts[0] == "lift" and len(parts) >= 2:
-        m = motors.get(LIFT)
-        if not m:
-            emit("err lift missing"); return
-        sub = parts[1]
-        try:
-            if sub == "up":
-                m.run(LIFT_SPEED * LIFT_DIR)
-            elif sub == "dn":
-                m.run(-LIFT_SPEED * LIFT_DIR)
-            elif sub == "stp":
-                m.brake()
-            else:
-                emit("? " + line); return
-            emit("ok " + line)
-        except Exception as e:
-            emit("err " + str(e))
+    if parts[0] == "lift":
+        emit("err lift unavailable")
         return
 
     if parts[0] == "aux" and len(parts) >= 2:
@@ -164,7 +167,14 @@ def handle(line):
                 hub.display.off()
             elif sub == "pixel" and len(parts) >= 5:
                 hub.display.pixel(int(parts[2]), int(parts[3]), int(parts[4]))
-            elif sub == "text" and len(parts) >= 3:
+            elif sub == "text":
+                if any(ord(ch) < 32 or ord(ch) > 126 for ch in line):
+                    emit("err dsp text"); return
+                raw = line.strip().split(None, 2)
+                if len(raw) < 3 or len(raw[2]) > 16:
+                    emit("err dsp text"); return
+                if not brake_for_play():
+                    emit("err brake"); return
                 hub.display.text(" ".join(parts[2:]))
             elif sub == "icon" and len(parts) >= 3:
                 # Pybricks 버전별 Icon 상수 차이를 피하려고 검증용 고정 스마일.
@@ -190,10 +200,18 @@ def handle(line):
             elif parts[1] == "note":
                 note = parts[2] if len(parts) >= 3 else "C4"
                 ms = int(parts[3]) if len(parts) >= 4 else 200
-                freq = {"C4": 262, "D4": 294, "E4": 330, "F4": 349, "G4": 392, "A4": 440, "B4": 494,
-                        "C5": 523, "D5": 587, "E5": 659, "F5": 698, "G5": 784, "A5": 880}.get(note, 440)
+                freq = {"C4": 262, "C#4": 277, "D4": 294, "D#4": 311, "E4": 330,
+                        "F4": 349, "F#4": 370, "G4": 392, "G#4": 415, "A4": 440,
+                        "A#4": 466, "B4": 494, "C5": 523, "D5": 587, "E5": 659,
+                        "F5": 698, "G5": 784, "A5": 880}.get(note)
+                if freq is None:
+                    emit("err snd note"); return
             else:
                 emit("? " + line); return
+            if not 1 <= ms <= 2000:
+                emit("err snd duration"); return
+            if not brake_for_play():
+                emit("err brake"); return
             hub.speaker.beep(freq, ms)
             emit("ok " + line)
         except Exception as e:
@@ -272,7 +290,7 @@ while True:
         continue
     buf += ch
     if ch == "\n":
-        line = buf.strip()
+        line = buf[:-1]  # Remove newline only; validation must see control characters.
         buf = ""
         if line:
             hub.light.on(Color.BLUE)

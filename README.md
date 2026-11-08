@@ -38,12 +38,61 @@
 
 운영 흐름:
 
-1. 개발/업데이트 때만 Pybricks Code에서 `pybricks/main.py`를 허브 **slot 0**에 Download
+1. 개발/업데이트 때만 Pybricks Code에서 허브 **slot 0**을 선택해 `pybricks/main.py` Run → Stop/연결 해제 → 허브 정상 종료로 저장
 2. 평소에는 폰 앱 `legoagent` 실행
 3. `Scan` → Hub 선택 → `Start slot 0`
 4. Sound / Light / Display / Drive 버튼으로 직접 제어
 
 즉 노트북은 개발·업데이트 도구이고, 바론이의 실제 놀이 루프는 **폰 앱 ↔ BLE ↔ 허브**로 닫힌다.
+
+### 리모컨 — 탭마다 한판
+
+2026-11-08: `1.1.1+3`를 두 폰에 설치하고, 웹에서 새 허브 코드의 모터·센서 인식을 확인했다. 사용자는 실제 사용 후 정상 동작과 만족을 보고했다. 슬롯 번호와 정상 종료 후 전원 사이클 잔존의 개별 검증 기록은 별도로 남아 있지 않다.
+
+- **운전**: B/F 좌우 주행과 A 가운데 모터 좌우. 누르면 움직이고, 떼면 정지.
+- **피아노**: 흰건반 8개·검은건반 5개의 자판으로 허브 소리 내기.
+- **글자**: 영어·숫자·일반 기호를 입력해 허브 5×5 LED에 차례로 표시 / 지우기.
+- **조명**: 빨강 / 초록 / 파랑 / 끄기.
+
+실제 포트 구성(2026-11-08 사용자 보고): **A 가운데 모터, B 왼쪽 모터, F 오른쪽 모터, C 컬러 센서, E 거리 센서**. E는 모터가 아니므로 이전 승강기 제어는 제거한다. 센서는 선택적으로 초기화하며, 이번에는 자동 읽기나 자율주행을 추가하지 않는다.
+
+모든 놀이 탭은 스크롤 없이 한 화면에서 끝난다. 운전, 멈춰서 피아노, 멈춰서 글 보기는 **별개 놀이**다. 탭을 바꾸면 모든 모터 정지를 시도한다. 허브도 글자·소리 재생 전에 모터 브레이크를 호출한다. 글자·소리의 동시 제어 엔진은 만들지 않는다.
+
+설정 페이지에는 배터리 수동 조회, 연결 상태와 허브 응답, 다크/라이트 전환, 앱 버전·빌드 시각·변경 이력을 모은다. 설정의 이력 목록만 스크롤하며 놀이 탭에는 스크롤을 넣지 않는다. 변경 이력은 `flutter/lib/build_info.dart`에 최신순으로 추가하고 이전 항목은 보존한다.
+
+버전과 실제 빌드 시각이 포함된 APK는 저장소 루트에서 다음과 같이 만든다.
+
+```bash
+nix develop .#flutter --command bash flutter/tool/build-apk.sh
+```
+
+버전은 `flutter/pubspec.yaml`에서 읽고 빌드 시각은 KST로 기록한다. 일반 `flutter build apk`처럼 메타데이터 없이 빌드하면 설정에 개발 빌드/빌드 시각 미기록으로 표시한다.
+
+글자는 출력 가능한 ASCII(`0x20`–`0x7e`)만 지원하며 한글·이모지는 보내지 않는다. 공백은 정리하고 최대 16자, BLE 패킷이 작으면 더 짧게 제한한다. 허브의 동기 문자 표시는 끝날 때까지 다음 명령이 기다리므로 짧은 문장으로 쓴다.
+
+### 다음 업데이트 때 그대로 따라 할 순서
+
+**앱 설치** — 저장소 루트에서:
+
+```bash
+nix develop .#flutter --command bash flutter/tool/build-apk.sh
+adb devices -l
+# 폰 잠금 해제 → USB 디버깅 허용. 여러 폰이면 -s <serial> 지정.
+adb -s <serial> install -r flutter/build/app/outputs/flutter-apk/app-debug.apk
+adb -s <serial> shell dumpsys package com.legoagent.legoagent | grep -E 'versionCode=|versionName='
+```
+
+**허브 프로그램 교체** — Pybricks 펌웨어를 다시 굽는 작업이 아니다.
+
+1. 폰 리모컨에서 허브 연결을 끊고, 노트북 크롬에서 <https://code.pybricks.com/>을 연다.
+2. 허브를 켜고 웹에서 Bluetooth로 연결한다. 기기가 안 보이면 Chrome Web Bluetooth 활성화와 다른 기기의 BLE 점유를 확인한다. 2026-11-08에는 Web Bluetooth 활성화 후 연결됐다는 사용자 보고가 있었다.
+3. `pybricks/main.py`를 열거나 편집기에 내용을 붙여 넣는다. 에이전트가 클립보드를 준비할 때는 저장소 루트에서 `xclip -selection clipboard < pybricks/main.py`를 실행하고, 웹 편집기에서 전체 선택 후 붙여 넣으면 된다.
+4. 허브 좌우 버튼으로 **slot 0**을 선택했는지 확인한 뒤 **▶ Run**한다.
+5. 출력에서 `mot B ok`, `mot F ok`, `mot A ok`, `sensor color ok`, `sensor distance ok`, `rdy`를 확인한다. 센서가 빠졌어도 모터·피아노 프로그램은 시작할 수 있다.
+6. 웹 **■ Stop → Disconnect**, 허브 **정상 종료** 후 다시 켠다. 배터리를 바로 빼지 않는다.
+7. 폰 리모컨에서 Scan → 허브 연결 → 설정 → **Start slot 0**. 운전은 손 떼면 정지, 가운데 모터와 피아노·글자를 짧게 확인한다.
+
+[공식 문서](https://pybricks.com/learn/getting-started/pybricks-environment/)에서 **웹앱 Run은 선택 슬롯에 저장**하고 **허브 정상 종료 시 영구 보존**한다고 설명한다. 이전의 "Download 버튼이어야 하고 Run은 안 된다"는 안내는 잘못됐다. CLI `pybricksdev run ble`의 RAM 실행과 웹앱 Run을 혼동하지 않는다. 폰 연결 전에 웹 Bluetooth 연결은 반드시 끊는다.
 
 ## 목표
 
@@ -313,8 +362,10 @@ networking.firewall.allowedTCPPorts = [ 8888 ];
 
 다음 게이트:
 
-1. Pybricks Code 웹앱에서 `pybricks/main.py`를 hub slot 0에 **Download** (Run 아님)
-2. 노트북 BLE 끊고 허브 전원 OFF/ON
+1. Pybricks Code 웹앱에서 hub slot 0 선택 → `pybricks/main.py` Run → Stop
+2. 노트북 BLE 끊고 허브 정상 종료/재부팅
+
+   2026-11-08 안내 정정: 현 [공식 문서](https://pybricks.com/learn/getting-started/pybricks-environment/)는 웹앱 Run이 선택 슬롯에 저장하고 정상 종료 시 영구 보존한다고 설명한다. 기존 "Download, Run 아님" 지침을 대체한다.
 3. 다시 BLE 붙여 START 보냈을 때 `main.py`가 살아남는지 확인
 4. 살아남으면 Flutter 1~5단계 진행, 못 살아남으면 ESP32 브리지 조기 도입 또는 슬롯 download 패치 검토
 

@@ -43,7 +43,8 @@ Flutter가 업로드까지 하려는 순간 Pybricks 전송 프로토콜(WRITE_U
 
 따라서 폰 단독 운용 MVP는 다음 전제에서 시작한다.
 
-- `main.py`는 **Pybricks Code 웹앱**(`https://code.pybricks.com/`)에서 hub의 **slot 0**에 Download 한다 (영구 저장).
+- `main.py`는 **Pybricks Code 웹앱**(`https://code.pybricks.com/`)에서 허브의 **slot 0**을 선택해 Run한다. 프로그램은 선택 슬롯에 저장되며, 정상 종료(shutdown)해야 영구 보존된다. 배터리를 바로 빼지 않는다.
+- 2026-11-08 정정: 기존 "Download, Run 아님" 안내는 현 웹앱 동작과 맞지 않았다. [공식 환경 안내](https://pybricks.com/learn/getting-started/pybricks-environment/) 원문은 "When you run a new Pybricks program from the app, it will be saved in that slot." 및 "Programs are saved persistently during shutdown."이다. CLI `pybricksdev run ble`의 RAM 적재 관찰을 웹앱 Run에 그대로 적용하지 않는다.
 - Flutter는 업로드가 아니라 **START_USER_PROGRAM + WRITE_STDIN**만 담당한다.
 - 일회성 실행 도구인 `just upload` (= `pybricksdev run ble`)는 폰 단독 운용에 부적합하다 — 노트북 디버그용으로만 쓴다.
 
@@ -52,9 +53,9 @@ Flutter가 업로드까지 하려는 순간 Pybricks 전송 프로토콜(WRITE_U
 검증은 통과했다. 재현 절차는 다음과 같다.
 
 1. 노트북 크롬에서 `https://code.pybricks.com/` 열기 → 허브 BLE 연결
-2. `pybricks/main.py` 내용을 슬롯 0에 **Download** (Run 아님)
-3. 노트북 BLE 연결 끊기 (Pybricks Code 탭 닫거나 Disconnect)
-4. 허브 전원 OFF → ON
+2. 허브 좌우 버튼으로 슬롯 0을 확인하고 `pybricks/main.py`를 웹앱에서 Run
+3. 웹앱 Stop 후 노트북 BLE 연결 끊기 (Disconnect)
+4. 허브를 정상 종료한 뒤 다시 켜기 — 배터리 강제 분리 금지
 5. 폰 앱 `legoagent` 실행
 6. `Scan` → Hub 선택 → `Start slot 0`
 7. `Beep` / `Light` / `Drive` 버튼으로 반응 확인
@@ -68,7 +69,7 @@ Pybricks Hub의 BLE GATT 연결은 동시에 **하나만** 가능하다.
 - `just run` 등으로 노트북이 허브에 붙어 있으면 폰은 절대 스캔에 안 잡히거나 connect에서 실패한다.
 - 폰에서 BLE 테스트하기 전에 노트북 측 `pybricksdev` / `just run` 프로세스를 **반드시** 종료한다.
 - 허브 측 `pybricks/main.py`는 한 번 hub slot에 download되어 있으면 노트북 없이도 START 가능하다. 따라서 운영 흐름은 다음과 같다.
-  1. 노트북 크롬에서 Pybricks Code로 `main.py`를 slot 0에 **Download** (위 0.5단계 검증 완료 전제)
+  1. 노트북 크롬 Pybricks Code에서 slot 0 선택 → `main.py` Run → Stop → 허브 정상 종료로 저장 (위 0.5단계 검증 완료 전제)
   2. 노트북 BLE 끊기 (Pybricks Code 탭 Disconnect 또는 닫기)
   3. 폰 앱 실행 → BLE 스캔 → 연결 → START → stdin write
 
@@ -269,7 +270,7 @@ Pybricks command/event characteristic found
 
 ### 5. 선택: 프로그램 시작/명령 쓰기
 
-전제: 위 **0.5단계** 가 통과했고, `pybricks/main.py`가 Pybricks Code로 slot 0에 영구 download되어 있다. 노트북 BLE는 끊겨 있다.
+전제: 위 **0.5단계** 가 통과했고, `pybricks/main.py`가 Pybricks Code의 slot 0에 저장되고 허브 정상 종료로 영구 보존되어 있다. 노트북 BLE는 끊겨 있다.
 
 Flutter에서:
 
@@ -309,7 +310,7 @@ Flutter 쪽은 `JavascriptChannel(name: 'LegoBle', onMessageReceived: ...)`에�
 
 ## Claude에게 맡길 작업 단위
 
-0. **0.5단계 검증** — Pybricks Code로 slot 0 download → 전원 사이클 → START 살아남는지 확인. 이 게이트를 통과해야 1번부터 의미 있다.
+0. **0.5단계 검증** — Pybricks Code slot 0 Run → Stop/연결 해제 → 허브 정상 종료/재부팅 → START 살아남는지 확인. 이 게이트를 통과해야 1번부터 의미 있다.
 1. `flutter create --project-name legoagent --org com.legoagent .` 후 homeagent의 최소 설정 이식
 2. `flutter_blue_plus`로 Pybricks service scan 화면 만들기
 3. device connect + `requestMtu(247)` + services discovery + command/event characteristic 찾기

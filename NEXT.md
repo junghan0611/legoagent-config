@@ -1,90 +1,46 @@
 # NEXT — legoagent-config
 
-> 휘발성 후속. 지금 시점에 알고 있는 다음 한 걸음.
-> 영속할 사실은 README / INVARIANTS / commit history 로 옮긴다.
+> 다음 요청이 올 때 여는 책갈피. 설치 절차는 README의 "다음 업데이트 때 그대로 따라 할 순서"가 기준이다.
 
 # RAIL — 현재 좌표
 
-- [x] **1. Stage 1 RC car** — 폰 단독 Flutter 앱 ↔ BLE ↔ SPIKE 허브 (노트북 불필요)
-- [x] **2. 앱 다듬기** — UI declutter, elevator 탭, 다크모드
-- [ ] **3. 리모컨 개편** ← CURRENT: Terra 형제 형성 → 화면/허브 경계 확정
-- [ ] **4. 허브·폰 반영 / 실물 확인** — A 모터 포함, 피아노·메시지·운전 정지 확인
-- [ ] **5. 여러 몸 / WiFi 영상 → 차체 합체** — 이번 리모컨 개편 뒤에 재개
+- [x] **1. 폰 단독 리모컨** — Flutter ↔ BLE ↔ SPIKE
+- [x] **2. 한판 UI·피아노·글자·설정** — 실제 자판, 버전/빌드 시각/누적 이력
+- [x] **3. 실제 배선·실물 반영** — 1.1.1+3 두 폰 설치, 사용자 정상 동작 보고
+- [ ] **4. 다음 놀이 요청** ← CURRENT: 사용자 요청 대기; 임의 고도화하지 않는다
 
-현재 좌표: 2 완료 → 3 요구 정리 / 구현 전 → 4 실물 게이트 → 5 대기
+현재 좌표: 오늘 작업 완료 → 다음 요청이 오면 새 범위를 정한다.
 
 # NOW
 
-- 요구 원문: GLG의 2026-11-08 현재 세션 요청 — (1) 별도 탭 도레미파솔라시도 피아노,
-  (2) 직접 입력한 영어·지원 기호만 허브에서 슬라이드처럼 표시(한글 지원은 범위 밖; GLG 정정),
-  (3) A 모터 제어 유지, (4) 연결 뒤 첫 화면은 스크롤 없이 누르는 리모컨 중심.
-  Claude 쿼터 대신 Terra 사용 요청. GLG는 11-08 기존 앱을 먼저 사용한다고 보고.
-- 원본 사진: `/home/junghan/screenshot/Screenshot_20261108_170004_Gallery.jpg`,
-  `/home/junghan/screenshot/20261108T165500--baron-lego-design.png`.
-  로컬 축소 읽기본 `/tmp/lego-car.jpg`, `/tmp/lego-design.jpg` (일시 파일).
-- Next: Terra 둘을 앱/허브 후보로 형성하고 원문·INVARIANTS를 읽힌다.
-  GLG 확정: 7세 아이의 별개 놀이 시나리오다. 운전 / 멈춰서 피아노 / 멈춰서 글 보기.
-  동시 제어·주행 중 재생은 요구하지 않는다. 병렬 재생 엔진/비차단 프레임워크를 만들지 않는다.
-  탭을 벗어날 때 모터 정지, 기존 손 뗌/lifecycle 정지 규칙은 유지한다.
-  구현 전 허브가 지원하는 영어·기호 범위와 단순한 탭별 명령만 확정한다.
-  역할: 앱 화면/위젯 테스트 한 명, 허브 명령/입력 검증/테스트 한 명; 부모가 통합.
-  GLG는 확정 요구의 commit/push와 구현 시작을 승인했다. 형제 callback 확인 후 작업 배정.
-  실물 모터 실행은 요청되지 않았다.
-- 이전 구현: A 포트에 새 모터가 달렸다. 코드는 들어갔다 (`main.py` `aux lft|rgt|stp`,
-  앱 Drive 탭 방향표 위 "A 모터" ◀ ▶ 데드맨, 비상정지에 `aux stp` 포함).
-  analyze / test / debug APK 빌드 통과(11-03 기록). **폰 설치 완료(11-08), 허브 반영 미확인.**
-- 개편 뒤 실물 반영 순서:
-  1. 노트북 크롬 `https://code.pybricks.com` → 허브 연결 → `pybricks/main.py`를
-     slot 0에 **Download** (Run 아님) → Pybricks Code 연결 끊기
-  2. `cd flutter && nix develop ..#flutter --command flutter build apk --debug`
-     → `adb install -r build/app/outputs/flutter-apk/app-debug.apk`
-  3. 앱에서 Start slot 0 → A ◀/▶ 누름=돎, 뗌=멈춤 확인. 반대로 돌면 `main.py`
-     `AUX_DIR = -1` 후 다시 Download.
-- Verify: 허브 응답 `ok aux lft` (설정 시트 ↩ 라인). `? aux lft`면 옛 main.py
-  그대로 — 1번 Download가 안 된 것. `err aux missing`이면 A에 모터 인식 안 됨.
-- 설치 확인(2026-11-08): adb에서 SM_G977N 연결 확인. 11-03 20:43 빌드된 기존
-  `flutter/build/app/outputs/flutter-apk/app-debug.apk`를 `adb install -r`로 설치 성공,
-  앱 실행 명령 성공(백그라운드 작업 #123, exit 0). 새 요구 기능은 아직 미구현.
-- 미검증: 지원 영어·기호의 정확한 범위, 현재 허브에 저장된 main.py 버전.
-  한글 폰트/렌더러는 만들지 않는다. 미지원 문자는 전송 전에 사용자에게 안내한다.
-- Do not touch: 앱에서 업로드 시도 금지 (INVARIANTS D-8). 새 연속 동작 버튼은
-  onTapUp/onTapCancel 둘 다 stop (D-1).
+- Current: 2026-11-08 사용자가 "잘된다", 아이가 대만족이라고 보고했다.
+  운전/피아노/글자/조명은 각각 스크롤 없는 한판. 운전과 정차 후 피아노·글자는 별개 놀이.
+- Next: 새 요청이 오면 README의 실제 포트와 설치 절차부터 읽고 시작한다.
+  센서 읽기/귀가/자율주행은 아직 구현하지 않았으며 다음 요청 전에는 시작하지 않는다.
+- Actual ports: A 가운데 모터, B 왼쪽 모터, F 오른쪽 모터, C 컬러 센서, E 거리 센서.
+  E는 모터가 아니다. 승강기 UI는 제거됐고 허브 lift 명령은 명시 오류로 거절한다.
+- Latest: 앱 1.1.1+3. SM-S942N과 SM-G977N 설치 성공/버전 확인은 Terra1 bg10/bg11 영수증.
+  허브 웹 Run의 B/F/A 및 color/distance ok, rdy는 사용자가 출력으로 보고했다.
+  슬롯 번호·정상 종료 후 전원 사이클 잔존의 개별 결과는 기록되지 않았다.
+- Guardrails: 앱 업로드 구현/자동 폴링 금지. 손 뗌·취소·탭 이동·앱 숨김·연결 종료 시 모터 정지.
+  영어/숫자/출력 가능한 ASCII 기호만, 최대16자와 MTU 바이트 제한. 한글 지원 없음.
+  실제 피아노 건반은 세로 화면에서 좁다(320폭 기준 흰38/검은22.8px); 가로로 더 넓게 연주.
 
 # RECENT
 
-- [2026-11-03] A 모터 좌우 버튼 추가 (코드만, 허브/폰 미반영).
-- [2026-06-13] 다크모드 토글 (`15d37f0`).
-- [2026-05-29] 단일 앱 멀티바디 방향 확정 (`09c67d9`).
+- [2026-11-08] 흰8/검은5 피아노 자판, A/B/F 모터와 C/E optional 센서 등록, 4탭 리모컨.
+- [2026-11-08] 설정에 수동 배터리/상태·테마·버전·실제 KST 빌드 시각·누적 이력.
+- [2026-11-08] 최종 #940: Python13건, Flutter7건(기본/define 양쪽), analyze, APK 빌드 통과.
+  앱 안내 문구 정정 포함 재빌드 시각18:17:11 KST. 두 폰 설치본은 문구 정정 전 같은1.1.1+3이며
+  동작 코드는 같다. 마지막 문구 정정 APK는 재설치하지 않았다.
+- [2026-11-08] 웹 Run도 선택 슬롯에 저장한다는 공식 문서로 기존 "Download, Run 아님" 안내 정정.
+  정상 shutdown 시 영구 보존. CLI RAM 실행과 웹앱 Run 저장을 혼동하지 않는다.
+- 형제: 앱/실물 안내 `20261108T172014-fd732e`, 허브 `20261108T172034-fcf1e9`,
+  통합 `20261108T164121-f723cf`. 사용자 감사 인사는 두 형제에게 전달했다.
 
-# LEDGER — 확정된 방향: 앱 하나가 여러 몸을 받아낸다
+# LEDGER — 보류된 방향
 
-```text
-legoagent (Flutter 앱, 폰 하나)
- ├─ BLE  → SPIKE Prime 허브   = 몸 (주행/모터/IMU)
- └─ WiFi → ESP32 / M5GO       = 감각·표정·눈 (카메라/소리/화면/RGB)
-```
-
-- 몸체를 늘려도 **앱은 하나**. 전송로(BLE/WiFi)가 둘이어도 인터페이스는 하나.
-- SPIKE 허브에 다 우겨넣지 않는다(README 비목표). 카메라/소리/표정은 ESP32 쪽.
-- M5GO 케이스가 8mm 레고 호환 → 감각 두뇌를 레고로 차체에 마운트, 무선 브리지로
-  붙는다 (GROVE ≠ LEGO Powered Up 커넥터).
-
-| 모델 | 정체 | 역할 |
-|---|---|---|
-| **M5GO v2.7** | ESP32 + 2" IPS + IMU + 마이크 + 스피커 + RGB×10. 카메라 없음 | 표정/소리/IMU 두뇌 |
-| **TimerCamera X** | ESP32 + OV3660 3MP + 8MB PSRAM + WiFi 영상 | 눈 (카메라) |
-| Unit-CAM / M5Camera / ESP32-CAM | 같은 GROVE 계열 ESP32 카메라 | 눈 대안 |
-
-모두 ESP32 + WiFi 영상 → 앱은 **MJPEG/HTTP 스트림 한 경로**로 받는다.
-ESP32/M5Stack 맥락은 edgeagent-config 쪽에도 있다.
-
-병행 과제: Flutter 탭 허브측 채우기 — Display / Sound / Light / IMU / Hub 는 UI
-골격뿐. `pybricks/main.py` 파서에 `disp/snd/lit/tlm imu` 보강.
-
-## 메모
-
-- 누르면 응답이 온다 — 자동 폴링 금지 (INVARIANTS D-10). 영상 스트림도 "보기 탭을
-  열었을 때" 시작, 백그라운드 상시 스트림 없음.
-- 폰 BLE 테스트 전 노트북 `just run` / `pybricksdev` / Pybricks Code 연결 반드시
-  종료 (GATT 단일 점유).
-- 새 기능 짜기 전 INVARIANTS.md 먼저 읽기.
+앱 하나가 여러 몸을 받아낸다: BLE SPIKE는 몸, WiFi ESP32/M5GO는 감각·표정·눈.
+카메라/소리/표정을 허브 하나에 우겨넣지 않는다. 센서 기반 귀가는 아이디어만 논의했다:
+바닥 선과 집 색 표시를 따라가는 경로가 첫 후보지만, 자동 동작 구현은 승인되지 않았다.
+새 기능 전 INVARIANTS.md를 읽고, 업데이트 시 flutter/lib/build_info.dart의 이전 이력을 보존한다.

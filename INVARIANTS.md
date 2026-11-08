@@ -213,6 +213,30 @@ await _commandEvent!.write([0x06, 0x64, 0x72, 0x76, ...], withoutResponse: false
 
 ---
 
+### D-11: 전체 정지는 모터별 완전한 줄을 별도 패킷으로 보낸다
+
+**위반 패턴**: `drv stp\nlift stp\naux stp\n`을 하나의 WRITE_STDIN에 묶어 전송한다.
+
+**문제**: opcode를 포함하면 25바이트다. 기본 MTU 23의 ATT payload 20바이트를 넘어 전체 정지가 실패할 수 있다.
+
+**규칙**: 각 stop 줄을 별도 with-response write로 순차 시도한다. 한 줄 실패로 나머지 모터 정지를 생략하지 않는다. 운전 탭을 떠날 때도 실제 모터(B/F/A) 전체 정지를 시도한다. E는 거리 센서이므로 현재 전체 정지 명령은 `drv stp`, `aux stp` 두 줄이다. 문자 입력은 opcode와 개행을 포함한 UTF-8 바이트 수가 협상 MTU-3 이내인지 전송 전에 검증한다.
+
+**적용 대상**: `flutter/lib/main.dart`의 `_emergencyStop`, 탭 전환, 글자 전송 검증.
+
+---
+
+### D-12: 놀이 탭은 스크롤 없이 한판 — 키보드와 오류 문구도 포함
+
+**위반 패턴**: 작은 화면에서 글자 입력 키보드와 오류 문구가 나타나면 전송/지우기 버튼이 화면 밖으로 밀린다. 이를 스크롤로 감춘다.
+
+**문제**: 아이가 기능을 찾으려고 화면을 내려야 한다. 리모컨은 탭마다 바로 보이고 눌리는 한판이어야 한다.
+
+**규칙**: 운전·피아노·글자·조명은 각각 스크롤 없이 완료한다. 작은 세로 화면에서도 일반 버튼의 주요 터치 영역은 최소 48 논리 픽셀을 유지한다. 실제 배치의 피아노 건반은 예외로 세로 폭을 측정·명시하고 가로 화면에서 넓혀 쓴다. 겹친 흰/검은 건반 터치가 다른 음 또는 이중 명령을 내지 않도록 검증한다. 글자 탭은 키보드와 오류 안내가 함께 표시된 상태에서 전송/지우기 접근성을 검증한다. 기능과 여백을 줄여 해결하며 아래 숨은 기능을 만들지 않는다.
+
+**적용 대상**: `flutter/lib/main.dart`의 모든 놀이 탭 및 작은 화면 위젯 테스트.
+
+---
+
 ## Python (pybricks/main.py)
 
 ### P-1: `handle(line)`는 알 수 없는 명령을 침묵으로 무시하지 않는다
@@ -242,6 +266,18 @@ def handle(line):
 
 ---
 
+### P-4: 실제 포트의 장치 종류를 보존한다
+
+**위반 패턴**: 예전 승강기 배선을 가정해 거리 센서가 연결된 E를 `Motor(Port.E)`로 초기화한다.
+
+**문제**: 장치 인식 실패와 잘못된 제어 UI가 생기고, 실패 처리 방식에 따라 리모컨 전체가 시작하지 못한다.
+
+**규칙**: 현재 모터는 B/F/A, 센서는 C `ColorSensor` / E `UltrasonicSensor`다. 센서 미연결은 독립적으로 처리해 나머지 기능이 시작하게 한다. `lift`는 명시 오류로 거절한다. 모의 기동 테스트로 모터 포트·센서 초기화·미연결 시 `rdy`를 검증한다.
+
+**적용 대상**: `pybricks/main.py` 기동부, 모터 제어, `pybricks/test_main.py`의 기동 테스트.
+
+---
+
 ## 운영 / 검증 게이트
 
 ### O-1: 0.5 검증 게이트 미통과 상태에서 write path를 켜는 변경은 UI에 명시한다
@@ -257,7 +293,7 @@ def handle(line):
 ```bash
 nix develop .#flutter --command bash -c "cd flutter && flutter analyze"
 nix develop .#flutter --command bash -c "cd flutter && flutter test"
-nix develop .#flutter --command bash -c "cd flutter && flutter build apk --debug"
+nix develop .#flutter --command bash flutter/tool/build-apk.sh
 ```
 
 세 개 모두 통과해야 한다. APK 크기가 크게 변하면 (>20MB) 의존성 추가 의도 검토.
